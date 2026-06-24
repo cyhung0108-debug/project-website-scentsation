@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>退貨及退款政策 - APOTHEKE</title>
+    <link rel="stylesheet" href="assets/styles.css">
+    <script defer src="assets/site-config.js"></script>
+    <script defer src="assets/products.js"></script>
+    <script defer src="assets/product-admin-store.js"></script>
+    <script defer src="assets/firebase-config.js"></script>
+    <script defer src="assets/firebase-service.js"></script>
+    <script defer src="assets/app.js"></script>
+    <script defer src="assets/merchant.js"></script>
+  </head>
+  <body data-page="policy" data-policy-type="refund" data-root-prefix="./" data-list-url="collections/home-fragrance/">
+    <div class="announcement" data-free-shipping-announcement></div>
+    <header class="site-header" aria-label="網站頁首">
+      <button class="mobile-menu-button" type="button" data-open-drawer="menu" aria-label="開啟導覽"><span></span><span></span></button>
+      <a class="brand" href="index.html" aria-label="APOTHEKE 首頁">APOTHEKE</a>
+      <nav class="desktop-nav" aria-label="主要導覽">
+        <a class="nav-link" href="collections/home-fragrance/">商品</a>
+        <a class="nav-link" href="about.html">關於我們</a>
+        <a class="nav-link" href="contact.html">聯絡我們</a>
+        <a class="nav-link" href="delivery.html">送貨方式</a>
+        <a class="nav-link" href="payment.html">付款方式</a>
+        <a class="nav-link is-active" href="refund.html">退貨及退款政策</a>
+      </nav>
+      <div class="header-actions">
+        <a class="account-link" href="#login">登入 / 註冊</a>
+        <button class="icon-button search-button" type="button" data-open-search-modal aria-label="開啟搜尋"></button>
+        <button class="cart-button" type="button" data-open-drawer="cart" aria-label="開啟購物車"><span class="cart-shape"><span class="cart-count">0</span></span></button>
+      </div>
+    </header>
+    <main data-policy-page data-policy-type="refund"></main>
+    <div class="drawer-backdrop" data-close-drawer></div>
+    <aside class="drawer" id="cart-drawer" aria-hidden="true" aria-label="購物車"><button class="drawer-close" type="button" data-close-drawer aria-label="關閉購物車">x</button><h2>購物車（<span class="cart-total-quantity">0</span> 件）</h2><p class="shipping-progress"></p><div class="cart-items" data-cart-items><p class="empty-cart">你的購物車目前是空的</p></div><div class="cart-summary"><p><span>商品總數</span><strong><span class="cart-total-quantity">0</span> 件</strong></p><p><span>總金額</span><strong class="cart-total-amount"></strong></p></div><textarea placeholder="新增禮品備註"></textarea><button class="checkout-button" type="button" data-toast="結帳目前為前端展示，尚未串接後端">前往結帳</button><button class="clear-cart-button" type="button" data-cart-action="clear">清空購物車</button></aside>
+    <aside class="drawer" id="menu-drawer" aria-hidden="true" aria-label="導覽"><button class="drawer-close" type="button" data-close-drawer aria-label="關閉導覽">x</button><h2>選單</h2><a href="collections/home-fragrance/">商品</a><a href="about.html">關於我們</a><a href="contact.html">聯絡我們</a><a href="delivery.html">送貨方式</a><a href="payment.html">付款方式</a><a href="refund.html">退貨及退款政策</a></aside>
+    <div class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
