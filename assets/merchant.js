@@ -1,5 +1,5 @@
 (function () {
-  const MERCHANT_EMAIL_ALLOWLIST = ["candy@virtrix.io"];
+  const MERCHANT_EMAIL_ALLOWLIST = ["candy@virtrix.io","jacky@virtrix.io"];
   const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
   const container = document.querySelector("[data-merchant-page]");
   const store = window.ONLINE_SHOP_PRODUCT_ADMIN_STORE;
