@@ -1,5 +1,5 @@
 (function () {
-  const MERCHANT_UID_ALLOWLIST = ["MvVN7JqMAiUp5S051FYQ5Hw5dLO2"];
+  const MERCHANT_EMAIL_ALLOWLIST = ["candy@virtrix.io"];
   const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
   const container = document.querySelector("[data-merchant-page]");
   const store = window.ONLINE_SHOP_PRODUCT_ADMIN_STORE;
@@ -16,7 +16,7 @@
   let categorySortables = [];
   let hasPromptedLogin = false;
 
-  window.MERCHANT_UID_ALLOWLIST = MERCHANT_UID_ALLOWLIST;
+  window.MERCHANT_EMAIL_ALLOWLIST = MERCHANT_EMAIL_ALLOWLIST;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -36,7 +36,8 @@
   }
 
   function isAllowedMerchant(user) {
-    return MERCHANT_UID_ALLOWLIST.includes(String(user?.uid || ""));
+    const email = String(user?.email || "").trim().toLowerCase();
+    return MERCHANT_EMAIL_ALLOWLIST.includes(email);
   }
 
   function merchantUrl() {

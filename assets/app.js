@@ -1,7 +1,6 @@
 (function () {
   const CART_KEY = "onlineShopCart";
   const LEGACY_USERS_KEY = "onlineShopUsers";
-  const CURRENT_USER_KEY = "onlineShopCurrentUser";
   const products = Array.isArray(window.ONLINE_SHOP_PRODUCTS) ? window.ONLINE_SHOP_PRODUCTS : [];
   const siteConfig = window.ONLINE_SHOP_SITE_CONFIG || {};
   const currencyConfig = siteConfig.currency || { symbol: "HK$", freeShippingThreshold: 3000 };
@@ -230,34 +229,9 @@
     document.body.appendChild(menu);
   }
 
-  function loadCurrentUser() {
-    try {
-      const raw = window.localStorage.getItem(CURRENT_USER_KEY);
-      const cachedUser = raw ? JSON.parse(raw) : null;
-      state.currentUser = cachedUser?.uid
-        ? {
-            uid: cachedUser.uid,
-            email: cachedUser.email || "",
-            displayName: cachedUser.displayName || "",
-            photoURL: cachedUser.photoURL || "",
-            providerId: cachedUser.providerId || "firebase"
-          }
-        : null;
-      if (!state.currentUser) window.localStorage.removeItem(CURRENT_USER_KEY);
-    } catch (error) {
-      state.currentUser = null;
-      window.localStorage.removeItem(CURRENT_USER_KEY);
-    }
-    return state.currentUser;
-  }
-
-  function saveCurrentUser(user) {
+  function setCurrentUserFromFirebase(user) {
     state.currentUser = user || null;
-    if (state.currentUser) {
-      window.localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(state.currentUser));
-    } else {
-      window.localStorage.removeItem(CURRENT_USER_KEY);
-    }
+    if (!state.currentUser) closeAccountMenu();
     updateAuthNav();
   }
 
@@ -359,10 +333,11 @@
     try {
       const firebase = await getFirebaseService();
       firebase.onAuthStateChanged(firebase.auth, (user) => {
-        saveCurrentUser(normalizeFirebaseUser(user));
+        setCurrentUserFromFirebase(normalizeFirebaseUser(user));
       });
     } catch (error) {
       console.error("Firebase Authentication 初始化失敗：", error);
+      setCurrentUserFromFirebase(null);
     }
   }
 
@@ -478,8 +453,7 @@
     setAuthMessage("正在建立帳戶…");
     try {
       const firebase = await getFirebaseService();
-      const credential = await firebase.createUserWithEmailAndPassword(firebase.auth, email, password);
-      saveCurrentUser(normalizeFirebaseUser(credential.user));
+      await firebase.createUserWithEmailAndPassword(firebase.auth, email, password);
       closeAuthModal();
       showToast("註冊成功，已為你登入。");
     } catch (error) {
@@ -498,8 +472,7 @@
     setAuthMessage("正在登入…");
     try {
       const firebase = await getFirebaseService();
-      const credential = await firebase.signInWithEmailAndPassword(firebase.auth, email, password);
-      saveCurrentUser(normalizeFirebaseUser(credential.user));
+      await firebase.signInWithEmailAndPassword(firebase.auth, email, password);
       closeAuthModal();
       showToast("登入成功。");
     } catch (error) {
@@ -514,8 +487,7 @@
     setAuthMessage("正在開啟 Google 登入…");
     try {
       const firebase = await getFirebaseService();
-      const credential = await firebase.signInWithPopup(firebase.auth, firebase.googleProvider);
-      saveCurrentUser(normalizeFirebaseUser(credential.user));
+      await firebase.signInWithPopup(firebase.auth, firebase.googleProvider);
       closeAuthModal();
       showToast("Google 登入成功。");
     } catch (error) {
@@ -545,7 +517,6 @@
     try {
       const firebase = await getFirebaseService();
       await firebase.signOut(firebase.auth);
-      saveCurrentUser(null);
       closeAccountMenu();
       showToast("已登出。");
     } catch (error) {
@@ -1144,28 +1115,33 @@
           <label><input type="checkbox" value="preorder" data-filter-order-status><span></span>預購</label>
         </div>
       </section>
-      ${categories.map((category) => {
-        const hasSubcategories = category.subcategories.length > 0;
-        return `
-        <section class="filter-section filter-section--category is-open" data-filter-category-group="${escapeHtml(category.id)}">
-          <div class="filter-category-heading">
-            <label class="filter-category-parent">
-              <input type="checkbox" data-filter-category-id="${escapeHtml(category.id)}">
-              <span></span>
-              <strong>${escapeHtml(category.name)}</strong>
-            </label>
-            ${hasSubcategories ? `<button class="filter-category-toggle" type="button" aria-expanded="true" aria-label="展開或收起 ${escapeHtml(category.name)}">
-              <span class="filter-category-arrow" aria-hidden="true"></span>
-            </button>` : ""}
-          </div>
-          ${hasSubcategories ? `<div class="filter-content filter-options filter-category-tree">
-            ${category.subcategories.map((subcategory) => `
-              <label class="filter-category-child"><input type="checkbox" value="${escapeHtml(subcategory.id)}" data-filter-subcategory-id="${escapeHtml(subcategory.id)}" data-filter-parent-id="${escapeHtml(category.id)}"><span></span>${escapeHtml(subcategory.name)}</label>
-            `).join("")}
-          </div>` : ""}
-        </section>
-      `;
-      }).join("")}
+      <section class="filter-section filter-section--category-group is-open">
+        <button class="filter-section-toggle" type="button" aria-expanded="true">類別</button>
+        <div class="filter-content filter-category-groups">
+          ${categories.map((category) => {
+            const hasSubcategories = category.subcategories.length > 0;
+            return `
+            <section class="filter-section filter-section--category is-open" data-filter-category-group="${escapeHtml(category.id)}">
+              <div class="filter-category-heading">
+                <label class="filter-category-parent">
+                  <input type="checkbox" data-filter-category-id="${escapeHtml(category.id)}">
+                  <span></span>
+                  <strong>${escapeHtml(category.name)}</strong>
+                </label>
+                ${hasSubcategories ? `<button class="filter-category-toggle" type="button" aria-expanded="true" aria-label="展開或收起 ${escapeHtml(category.name)}">
+                  <span class="filter-category-arrow" aria-hidden="true"></span>
+                </button>` : ""}
+              </div>
+              ${hasSubcategories ? `<div class="filter-content filter-options filter-category-tree">
+                ${category.subcategories.map((subcategory) => `
+                  <label class="filter-category-child"><input type="checkbox" value="${escapeHtml(subcategory.id)}" data-filter-subcategory-id="${escapeHtml(subcategory.id)}" data-filter-parent-id="${escapeHtml(category.id)}"><span></span>${escapeHtml(subcategory.name)}</label>
+                `).join("")}
+              </div>` : ""}
+            </section>
+          `;
+          }).join("")}
+        </div>
+      </section>
     `;
     const sortSelect = $("[data-sort-products]", form);
     if (sortSelect) sortSelect.value = state.sort;
@@ -1608,8 +1584,6 @@
   window.handleGoogleAuth = handleGoogleAuth;
   window.handlePasswordReset = handlePasswordReset;
   window.handleLogout = handleLogout;
-  window.saveCurrentUser = saveCurrentUser;
-  window.loadCurrentUser = loadCurrentUser;
   window.updateAuthNav = updateAuthNav;
   window.getProductImages = getProductImages;
   window.getProductPrimaryImage = getProductPrimaryImage;
@@ -1630,7 +1604,7 @@
   renderPolicyPage();
   renderSiteFooter();
   window.localStorage.removeItem(LEGACY_USERS_KEY);
-  loadCurrentUser();
+  window.localStorage.removeItem("onlineShopCurrentUser");
   updateAuthNav();
   initFirebaseAuth();
   loadCart();

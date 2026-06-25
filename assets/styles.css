@@ -501,6 +501,16 @@ h6 {
   display: grid;
 }
 
+.filter-category-groups {
+  display: none;
+  padding: 0 0 12px;
+}
+
+.filter-section--category-group.is-open .filter-category-groups {
+  display: grid;
+  gap: 0;
+}
+
 .filter-options label {
   display: grid;
   grid-template-columns: 20px 1fr;
@@ -539,6 +549,10 @@ h6 {
   min-height: 54px;
   padding-bottom: 12px;
   border-bottom: 0;
+}
+
+.filter-section--category-group > .filter-content {
+  padding: 0;
 }
 
 .filter-category-heading {

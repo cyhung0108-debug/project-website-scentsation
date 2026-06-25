@@ -12,7 +12,7 @@ service cloud.firestore {
 
     function isMerchant() {
       return isSignedIn()
-        && request.auth.uid == "MvVN7JqMAiUp5S051FYQ5Hw5dLO2";
+        && request.auth.token.email == "candy@virtrix.io";
     }
 
     match /products/{productId} {
