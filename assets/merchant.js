@@ -1,5 +1,9 @@
-(function () {
-  const MERCHANT_EMAIL_ALLOWLIST = ["candy@virtrix.io","jacky@virtrix.io"];
+﻿(function () {
+  const merchantUids = [
+    "q03M83yAzAfFMnHRZBcvDusykMy2",
+    "bMUXPPo7KPX7bIL14fzCwvFExYG2"
+  ];
+  const MERCHANT_UID_SET = new Set(merchantUids.map((uid) => String(uid || "").trim()).filter(Boolean));
   const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
   const container = document.querySelector("[data-merchant-page]");
   const store = window.ONLINE_SHOP_PRODUCT_ADMIN_STORE;
@@ -14,9 +18,8 @@
   let categoryDraft = [];
   let originalCategoryIds = [];
   let categorySortables = [];
-  let hasPromptedLogin = false;
 
-  window.MERCHANT_EMAIL_ALLOWLIST = MERCHANT_EMAIL_ALLOWLIST;
+  window.merchantUids = merchantUids;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -36,12 +39,27 @@
   }
 
   function isAllowedMerchant(user) {
-    const email = String(user?.email || "").trim().toLowerCase();
-    return MERCHANT_EMAIL_ALLOWLIST.includes(email);
+    return MERCHANT_UID_SET.has(String(user?.uid || "").trim());
   }
 
-  function merchantUrl() {
-    return `${document.body?.dataset.rootPrefix || ""}merchant.html`;
+  function rootPrefix() {
+    return document.body?.dataset.rootPrefix || "";
+  }
+
+  function merchantDashboardUrl() {
+    return `${rootPrefix()}merchant-dashboard.html`;
+  }
+
+  function storefrontLoginUrl() {
+    return `${rootPrefix()}index.html?auth=login&redirect=merchant-dashboard`;
+  }
+
+  function isMerchantAreaPage() {
+    return ["merchant", "merchant-dashboard"].includes(document.body?.dataset.page || "");
+  }
+
+  function isStorefrontPage() {
+    return !isMerchantAreaPage();
   }
 
   function updateMerchantNav(user) {
@@ -50,19 +68,19 @@
 
     document.querySelectorAll(".desktop-nav").forEach((nav) => {
       const link = document.createElement("a");
-      link.className = `nav-link merchant-nav-link${document.body?.dataset.page === "merchant" ? " is-active" : ""}`;
-      link.href = merchantUrl();
+      link.className = `nav-link merchant-nav-link${document.body?.dataset.page === "merchant-dashboard" ? " is-active" : ""}`;
+      link.href = merchantDashboardUrl();
       link.dataset.merchantNav = "";
-      link.textContent = "商品管理";
+      link.textContent = "\u5546\u54c1\u7ba1\u7406";
       nav.querySelector("a")?.insertAdjacentElement("afterend", link);
     });
 
     const menu = document.querySelector("#menu-drawer");
     if (menu) {
       const link = document.createElement("a");
-      link.href = merchantUrl();
+      link.href = merchantDashboardUrl();
       link.dataset.merchantNav = "";
-      link.textContent = "商品管理";
+      link.textContent = "\u5546\u54c1\u7ba1\u7406";
       menu.querySelector("a")?.insertAdjacentElement("afterend", link);
     }
   }
@@ -82,23 +100,77 @@
   function merchantErrorMessage(error, fallback) {
     const code = String(error?.code || "");
     const messages = {
-      "permission-denied": "Firebase 拒絕此操作，請登出後重新登入商戶帳號。",
-      "storage/unauthorized": "Firebase Storage 拒絕此操作，請登出後重新登入商戶帳號。",
-      "unavailable": "暫時無法連接 Firebase，請檢查網絡後重試。",
-      "storage/retry-limit-exceeded": "圖片上載逾時，請檢查網絡後重試。"
+      "permission-denied": "你目前沒有權限執行這個操作。",
+      "storage/unauthorized": "你目前沒有權限上載或刪除圖片。",
+      "unavailable": "目前無法連接 Firebase，請稍後再試。",
+      "storage/retry-limit-exceeded": "圖片上載逾時，請稍後再試。"
     };
     return messages[code] || error?.message || fallback;
   }
 
   function showMerchantToast(message) {
-    window.showToast?.(message);
+    if (window.showToast) {
+      window.showToast(message);
+      return;
+    }
+    const toast = document.querySelector(".toast");
+    if (!toast) return;
+    toast.textContent = message;
+    toast.classList.add("is-visible");
+    window.clearTimeout(showMerchantToast.timer);
+    showMerchantToast.timer = window.setTimeout(() => toast.classList.remove("is-visible"), 2000);
   }
 
+  function renderMerchantDashboardShell(user) {
+    if (!container) return;
+    document.title = "\u5546\u6236\u5f8c\u53f0 - APOTHEKE";
+    container.innerHTML = `
+      <section class="merchant-dashboard">
+        <aside class="merchant-dashboard__sidebar" aria-label="\u5546\u6236\u5f8c\u53f0\u5c0e\u89bd">
+          <a class="merchant-dashboard__brand" href="${rootPrefix()}index.html" target="_blank" rel="noopener noreferrer">APOTHEKE</a>
+          <nav>
+            <button type="button" data-merchant-section="users">\u7528\u6236\u7ba1\u7406</button>
+            <button type="button" data-merchant-section="sales">\u92b7\u552e\u7ba1\u7406</button>
+            <button class="is-active" type="button" data-merchant-section="products">\u7522\u54c1\u7ba1\u7406</button>
+          </nav>
+          <div class="merchant-dashboard__account">${escapeHtml(user.displayName || user.email || "\u5546\u6236\u5e33\u865f")}</div>
+          <button class="merchant-dashboard__logout" type="button" data-merchant-dashboard-logout>\u767b\u51fa</button>
+        </aside>
+        <main class="merchant-dashboard__content">
+          <section class="merchant-dashboard-section" data-merchant-panel="users">
+            <h1>\u7528\u6236\u7ba1\u7406</h1>
+            <p>\u9019\u88e1\u6703\u653e\u6703\u54e1\u5217\u8868\u3001\u6703\u54e1\u8cc7\u6599\u548c\u6b0a\u9650\u7ba1\u7406\u3002\u6b64\u5340\u76ee\u524d\u5148\u4fdd\u7559\u57fa\u672c\u7248\u9762\u3002</p>
+          </section>
+          <section class="merchant-dashboard-section" data-merchant-panel="sales">
+            <h1>\u92b7\u552e\u7ba1\u7406</h1>
+            <p>\u9019\u88e1\u6703\u653e\u8a02\u55ae\u3001\u4ed8\u6b3e\u3001\u51fa\u8ca8\u548c\u92b7\u552e\u5831\u8868\u3002\u6b64\u5340\u76ee\u524d\u5148\u4fdd\u7559\u57fa\u672c\u7248\u9762\u3002</p>
+          </section>
+          <section class="merchant-dashboard-section is-active" data-merchant-panel="products">
+            <div class="merchant-page">
+              <div class="merchant-page__heading">
+                <div><h1>\u7522\u54c1\u7ba1\u7406</h1></div>
+              </div>
+              <p class="merchant-page__message" data-merchant-page-message aria-live="polite"></p>
+              <section class="merchant-products-panel">
+                <div class="merchant-products-panel__heading">
+                  <h2>\u5168\u90e8\u5546\u54c1</h2>
+                  <div class="merchant-products-panel__actions">
+                    <button class="merchant-secondary-button" type="button" data-manage-categories>\u5206\u985e\u7ba1\u7406</button>
+                    <button class="merchant-primary-button" type="button" data-add-product>\u65b0\u589e</button>
+                  </div>
+                </div>
+                <div class="merchant-products" data-merchant-products></div>
+              </section>
+            </div>
+          </section>
+        </main>
+      </section>`;
+  }
   function cleanupProductImages(urls) {
     Promise.allSettled(uniqueStrings(urls).map((url) => store.deleteProductImage(url)))
       .then((results) => {
         if (results.some((result) => result.status === "rejected")) {
-          console.warn("部分商品圖片未能從 Storage 清理，商品資料已成功更新。", results);
+          console.warn("部分商品圖片未能從 Storage 刪除。", results);
         }
       });
   }
@@ -116,7 +188,7 @@
     if (!list || !store) return;
     const products = store.loadProducts();
     if (!products.length) {
-      list.innerHTML = '<p class="merchant-products__empty">目前沒有商品</p>';
+      list.innerHTML = '<p class="merchant-products__empty">目前沒有商品。</p>';
       return;
     }
 
@@ -124,15 +196,15 @@
       <article class="merchant-product ${product.isActive ? "" : "is-hidden"}">
         <div class="merchant-product__image">${primaryImage(product) ? `<img src="${escapeHtml(primaryImage(product))}" alt="">` : "<span>沒有圖片</span>"}</div>
         <div class="merchant-product__body">
-          <p class="merchant-product__status">${product.isActive ? "顯示中" : "已隱藏"}</p>
+          <p class="merchant-product__status">${product.isActive ? "上架中" : "已隱藏"}</p>
           <h3>${escapeHtml(product.name)}</h3>
-          <small>${escapeHtml(product.id)} · ${escapeHtml(store.productCategoryLabels(product).join("、") || "未分類")}</small>
+          <small>${escapeHtml(product.id)} ｜ ${escapeHtml(store.productCategoryLabels(product).join("、") || "未分類")}</small>
         </div>
         <div class="merchant-product__meta"><span>價格</span><strong>HK$${Number(product.price || 0).toFixed(2)}</strong></div>
         <div class="merchant-product__meta"><span>存貨</span><strong>${Number(product.stock || 0)}</strong></div>
         <div class="merchant-product__actions">
           <button type="button" data-edit-product="${escapeHtml(product.id)}">修改</button>
-          <button type="button" data-toggle-product="${escapeHtml(product.id)}" data-next-active="${product.isActive ? "false" : "true"}">${product.isActive ? "隱藏" : "顯示"}</button>
+          <button type="button" data-toggle-product="${escapeHtml(product.id)}" data-next-active="${product.isActive ? "false" : "true"}">${product.isActive ? "隱藏" : "上架"}</button>
           <button class="is-danger" type="button" data-delete-product="${escapeHtml(product.id)}">刪除</button>
         </div>
       </article>`).join("");
@@ -140,19 +212,10 @@
 
   function renderDashboard(user) {
     currentMerchant = user;
-    container.innerHTML = `
-      <section class="merchant-page">
-        <div class="merchant-page__heading"><div><h1>商品管理</h1><p>登入帳號：${escapeHtml(user.email || "")}</p></div><button type="button" class="merchant-secondary-button" data-auth-logout>登出</button></div>
-        <p class="merchant-page__message" data-merchant-page-message aria-live="polite"></p>
-        <section class="merchant-products-panel">
-          <div class="merchant-products-panel__heading"><h2>全部商品</h2><div class="merchant-products-panel__actions"><button class="merchant-secondary-button" type="button" data-manage-categories>分類管理</button><button class="merchant-primary-button" type="button" data-add-product>新增</button></div></div>
-          <div class="merchant-products" data-merchant-products></div>
-        </section>
-      </section>`;
+    renderMerchantDashboardShell(user);
     ensureMerchantModals();
     renderProductRows();
   }
-
   function ensureMerchantModals() {
     if (!document.querySelector("#merchantEditorModal")) {
       const modal = document.createElement("div");
@@ -231,13 +294,13 @@
           </div>
           <div class="merchant-editor-grid__wide merchant-image-editor">
             <div class="merchant-image-editor__heading"><span class="merchant-editor-label">圖片</span><label class="merchant-upload-button">上載<input type="file" accept="image/*" multiple data-image-upload></label></div>
-            <p>拖曳圖片可調整順序；第一張是主圖片，第二張是 Hover 圖。</p>
+            <p>拖曳圖片可以調整順序，第一張圖片會作為主圖片，第二張圖片會作為列表 Hover 圖。</p>
             <div class="merchant-image-list" data-editor-image-list></div>
           </div>
-          <label class="merchant-editor-grid__wide">商品描述<textarea name="description" rows="7" placeholder="每行一個段落">${escapeHtml(descriptions)}</textarea></label>
+          <label class="merchant-editor-grid__wide">商品描述<textarea name="description" rows="7" placeholder="每行一段商品描述">${escapeHtml(descriptions)}</textarea></label>
           <label class="merchant-editor-grid__wide">標籤<textarea name="tags" rows="3" placeholder="每行一個標籤">${escapeHtml(tags)}</textarea></label>
         </div>
-        <div class="merchant-editor-options"><label><input name="showOnHome" type="checkbox" ${product?.showOnHome ? "checked" : ""}><span>首頁推薦</span></label><label><input name="isActive" type="checkbox" ${product?.isActive !== false ? "checked" : ""}><span>顯示商品</span></label></div>
+        <div class="merchant-editor-options"><label><input name="showOnHome" type="checkbox" ${product?.showOnHome ? "checked" : ""}><span>顯示於首頁</span></label><label><input name="isActive" type="checkbox" ${product?.isActive !== false ? "checked" : ""}><span>上架商品</span></label></div>
         <p class="merchant-message" data-merchant-editor-message aria-live="polite"></p>
         <div class="merchant-modal__actions"><button class="merchant-secondary-button" type="button" data-close-merchant-modal>取消</button><button class="merchant-primary-button" type="submit" data-save-product>${product ? "儲存修改" : "新增商品"}</button></div>
       </form>`;
@@ -319,17 +382,17 @@
     categorySortables.forEach((instance) => instance.destroy());
     categorySortables = [];
     content.innerHTML = `<h2 id="merchantCategoryTitle">分類管理</h2>
-      <p class="merchant-category-help">拖曳可調整顯示順序。系統「未分類」不能刪除或改名。</p>
+      <p class="merchant-category-help">你可以在這裡新增、排序、修改或刪除大分類與小分類。</p>
       <div class="merchant-category-list" data-category-manager-list>${categoryDraft.map((category) => `
         <article class="merchant-category-card" data-category-editor-id="${escapeHtml(category.id)}">
           <div class="merchant-category-card__heading">
-            <button class="merchant-category-drag" type="button" data-category-drag aria-label="拖曳大分類">⋮⋮</button>
+            <button class="merchant-category-drag" type="button" data-category-drag aria-label="拖曳分類">⋮</button>
             <input type="text" data-category-name value="${escapeHtml(category.name)}" aria-label="大分類名稱" ${category.system ? "readonly" : ""}>
-            ${category.system ? '<span class="merchant-system-label">系統</span>' : `<button class="merchant-category-delete" type="button" data-delete-category="${escapeHtml(category.id)}">刪除</button>`}
+            ${category.system ? '<span class="merchant-system-label">系統分類</span>' : `<button class="merchant-category-delete" type="button" data-delete-category="${escapeHtml(category.id)}">刪除</button>`}
           </div>
           <div class="merchant-subcategory-list" data-subcategory-list="${escapeHtml(category.id)}">${category.subcategories.map((subcategory) => `
             <div class="merchant-subcategory-row" data-subcategory-editor-id="${escapeHtml(subcategory.id)}">
-              <button class="merchant-subcategory-drag" type="button" data-subcategory-drag aria-label="拖曳小分類">⋮⋮</button>
+              <button class="merchant-subcategory-drag" type="button" data-subcategory-drag aria-label="拖曳小分類">⋮</button>
               <input type="text" data-subcategory-name value="${escapeHtml(subcategory.name)}" aria-label="小分類名稱">
               <button type="button" data-delete-subcategory="${escapeHtml(subcategory.id)}" data-parent-category="${escapeHtml(category.id)}">刪除</button>
             </div>`).join("")}</div>
@@ -365,15 +428,15 @@
 
   async function saveCategoryManager() {
     syncCategoryDraftFromDom();
-    if (categoryDraft.some((category) => !category.name)) return categoryManagerError("大分類名稱不能留空。");
-    if (categoryDraft.some((category) => category.subcategories.some((subcategory) => !subcategory.name))) return categoryManagerError("小分類名稱不能留空。");
+    if (categoryDraft.some((category) => !category.name)) return categoryManagerError("請填寫所有大分類名稱。");
+    if (categoryDraft.some((category) => category.subcategories.some((subcategory) => !subcategory.name))) return categoryManagerError("請填寫所有小分類名稱。");
     const duplicateMainNames = categoryDraft.map((category) => category.name.toLowerCase());
     if (new Set(duplicateMainNames).size !== duplicateMainNames.length) return categoryManagerError("大分類名稱不能重複。");
     const hasDuplicateSubs = categoryDraft.some((category) => {
       const names = category.subcategories.map((subcategory) => subcategory.name.toLowerCase());
       return new Set(names).size !== names.length;
     });
-    if (hasDuplicateSubs) return categoryManagerError("同一大分類內的小分類名稱不能重複。");
+    if (hasDuplicateSubs) return categoryManagerError("同一個大分類下的小分類名稱不能重複。");
     const button = document.querySelector("[data-save-categories]");
     button.disabled = true;
     button.textContent = "儲存中…";
@@ -400,8 +463,8 @@
     const list = document.querySelector("[data-editor-image-list]");
     if (!list) return;
     list.innerHTML = editorImages.length
-      ? editorImages.map((image, index) => `<article class="merchant-editor-image" data-editor-image-id="${escapeHtml(image.id)}"><button class="merchant-image-drag" type="button" data-drag-handle aria-label="拖曳圖片">⋮⋮</button><img src="${escapeHtml(image.preview)}" alt="商品圖片 ${index + 1}"><span>${index === 0 ? "主圖片" : index === 1 ? "Hover 圖" : `圖片 ${index + 1}`}</span><button class="merchant-image-remove" type="button" data-remove-editor-image="${escapeHtml(image.id)}" aria-label="刪除圖片">×</button></article>`).join("")
-      : '<p class="merchant-image-empty">尚未加入圖片</p>';
+      ? editorImages.map((image, index) => `<article class="merchant-editor-image" data-editor-image-id="${escapeHtml(image.id)}"><button class="merchant-image-drag" type="button" data-drag-handle aria-label="拖曳圖片">⋮</button><img src="${escapeHtml(image.preview)}" alt="商品圖片 ${index + 1}"><span>${index === 0 ? "主圖片" : index === 1 ? "列表 Hover 圖" : `圖片 ${index + 1}`}</span><button class="merchant-image-remove" type="button" data-remove-editor-image="${escapeHtml(image.id)}" aria-label="刪除圖片">×</button></article>`).join("")
+      : '<p class="merchant-image-empty">請先上載圖片。</p>';
 
     sortable?.destroy();
     sortable = null;
@@ -421,7 +484,7 @@
   function openEditor(productId = null) {
     ensureMerchantModals();
     const product = productId ? productById(productId) : null;
-    if (productId && !product) return showPageError("找不到此商品。");
+    if (productId && !product) return showPageError("找不到這個商品。");
     editingProductId = product?.id || null;
     editorCategoryAssignments = cloneAssignments(product?.category || []);
     editorImages = (product?.images || []).map((url, index) => ({ id: `existing-${index}-${Date.now()}`, url, preview: url, file: null }));
@@ -441,10 +504,10 @@
 
   function openDeleteConfirmation(productId) {
     const product = productById(productId);
-    if (!product) return showPageError("找不到此商品。");
+    if (!product) return showPageError("找不到這個商品。");
     deletingProductId = product.id;
     deletingProductImages = [...(product.images || [])];
-    document.querySelector("[data-delete-product-message]").textContent = `確定要刪除「${product.name}」嗎？此操作無法復原。`;
+    document.querySelector("[data-delete-product-message]").textContent = `確定要刪除「${product.name}」嗎？此操作無法還原。`;
     const errorNode = document.querySelector("[data-merchant-delete-message]");
     if (errorNode) {
       errorNode.textContent = "";
@@ -478,8 +541,8 @@
     const price = Number(data.get("price"));
     if (!productId || !name) return setEditorError("請填寫商品 ID 和商品名稱。");
     if (!Number.isFinite(price) || price < 0) return setEditorError("請輸入有效價格。");
-    if (!editorCategoryAssignments.length) return setEditorError("請至少選擇一個大分類或小分類。");
-    if (!editorImages.length) return setEditorError("請至少上載一張圖片。");
+    if (!editorCategoryAssignments.length) return setEditorError("請至少選擇一個分類。");
+    if (!editorImages.length) return setEditorError("請至少保留一張圖片。");
 
     const wasEditing = Boolean(editingProductId);
     setEditorBusy(true);
@@ -522,37 +585,60 @@
     }
   }
 
-  async function handleAuthState(user) {
-    updateMerchantNav(user);
-    if (!container) return;
-    if (!user) {
-      currentMerchant = null;
-      closeMerchantModals();
-      renderGate("商戶登入", "請先登入已列入商戶白名單的帳號。", '<button class="merchant-primary-button" type="button" data-auth-trigger>登入商戶帳號</button>');
-      if (!hasPromptedLogin) {
-        hasPromptedLogin = true;
-        window.setTimeout(() => window.openAuthModal?.("login"), 0);
-      }
-      return;
-    }
-    hasPromptedLogin = false;
-    if (!isAllowedMerchant(user)) {
-      currentMerchant = null;
-      closeMerchantModals();
-      renderGate("沒有管理權限", `帳號 ${user.email || ""} 不是指定的商戶管理帳號。`, '<button class="merchant-secondary-button" type="button" data-auth-logout>登出</button>');
-      return;
-    }
+  async function firebaseService() {
+    if (!window.onlineShopFirebaseReady) throw new Error("Firebase 尚未初始化。");
+    return window.onlineShopFirebaseReady;
+  }
 
-    currentMerchant = user;
-    renderGate("正在載入商品", "請稍候…");
+  async function handleMerchantLogout() {
     try {
-      await store.initializeMerchantProducts();
-      renderDashboard(user);
-    } catch (error) {
-      renderGate("無法載入商品管理", error.message || "請檢查 Firestore 權限後重試。", '<button class="merchant-secondary-button" type="button" data-auth-logout>登出</button>');
+      const firebase = await firebaseService();
+      await firebase.signOut(firebase.auth);
+    } finally {
+      window.location.replace(`${rootPrefix()}index.html`);
     }
   }
 
+  async function handleAuthState(user) {
+    updateMerchantNav(user);
+
+    if (!user) {
+      currentMerchant = null;
+      closeMerchantModals();
+      if (container) window.location.replace(storefrontLoginUrl());
+      return;
+    }
+
+    if (!isAllowedMerchant(user)) {
+      currentMerchant = null;
+      closeMerchantModals();
+      if (container) {
+        renderGate("沒有權限", `帳號 ${escapeHtml(user.email || user.uid || "")} 沒有商戶後台權限。`, `<a class="merchant-secondary-button" href="${rootPrefix()}index.html">返回首頁</a>`);
+      }
+      return;
+    }
+
+    if (isStorefrontPage()) {
+      window.location.replace(merchantDashboardUrl());
+      return;
+    }
+
+    if (document.body?.dataset.page === "merchant") {
+      window.location.replace(merchantDashboardUrl());
+      return;
+    }
+
+    if (container) {
+      currentMerchant = user;
+      renderGate("正在載入後台", "請稍候…");
+      try {
+        await store.initializeMerchantProducts();
+        renderDashboard(user);
+      } catch (error) {
+        renderGate("後台載入失敗", error.message || "目前無法讀取商品資料。", `<button class="merchant-secondary-button" type="button" data-merchant-dashboard-logout>登出</button>`);
+      }
+    }
+  }
   document.addEventListener("submit", async (event) => {
     const form = event.target.closest("[data-merchant-editor-form]");
     if (!form || !currentMerchant) return;
@@ -565,17 +651,30 @@
   });
 
   document.addEventListener("click", async (event) => {
+    if (event.target.closest("[data-merchant-dashboard-logout]")) return handleMerchantLogout();
+    const sectionButton = event.target.closest("[data-merchant-section]");
+    if (sectionButton) {
+      const section = sectionButton.dataset.merchantSection;
+      document.querySelectorAll("[data-merchant-section]").forEach((button) => {
+        button.classList.toggle("is-active", button === sectionButton);
+      });
+      document.querySelectorAll("[data-merchant-panel]").forEach((panel) => {
+        panel.classList.toggle("is-active", panel.dataset.merchantPanel === section);
+      });
+      return;
+    }
+
     if (event.target.closest("[data-manage-categories]")) return openCategoryManager();
     if (event.target.closest("[data-add-category]")) {
       syncCategoryDraftFromDom();
-      categoryDraft.push(store.normalizeCategory({ id: store.newId("category"), name: "新大分類", order: categoryDraft.length, subcategories: [] }));
+      categoryDraft.push(store.normalizeCategory({ id: store.newId("category"), name: "新增大分類", order: categoryDraft.length, subcategories: [] }));
       return renderCategoryManager();
     }
     const addSubcategoryButton = event.target.closest("[data-add-subcategory]");
     if (addSubcategoryButton) {
       syncCategoryDraftFromDom();
       const category = categoryDraft.find((item) => item.id === addSubcategoryButton.dataset.addSubcategory);
-      if (category) category.subcategories.push({ id: store.newId("subcategory"), name: "新小分類", slug: "new-subcategory", order: category.subcategories.length });
+      if (category) category.subcategories.push({ id: store.newId("subcategory"), name: "新增小分類", slug: "new-subcategory", order: category.subcategories.length });
       return renderCategoryManager();
     }
     const deleteCategoryButton = event.target.closest("[data-delete-category]");
@@ -613,9 +712,9 @@
       try {
         await store.setProductActive(toggleButton.dataset.toggleProduct, nextActive);
         renderProductRows();
-        showMerchantToast(nextActive ? "商品已顯示" : "商品已隱藏");
+        showMerchantToast(nextActive ? "商品已上架" : "商品已隱藏");
       } catch (error) {
-        const message = merchantErrorMessage(error, "無法更新商品。");
+        const message = merchantErrorMessage(error, "無法更新商品狀態。");
         showPageError(message);
         showMerchantToast(message);
         toggleButton.disabled = false;
@@ -661,11 +760,11 @@
     const files = Array.from(event.target.files || []);
     for (const file of files) {
       if (!file.type.startsWith("image/")) {
-        setEditorError(`${file.name} 不是有效圖片。`);
+        setEditorError(`${file.name} 不是有效的圖片檔案。`);
         continue;
       }
       if (file.size > MAX_IMAGE_SIZE) {
-        setEditorError(`${file.name} 超過 10MB。`);
+        setEditorError(`${file.name} 超過 10MB 上限。`);
         continue;
       }
       editorImages.push({ id: `new-${crypto.randomUUID()}`, url: "", preview: URL.createObjectURL(file), file });
@@ -686,7 +785,7 @@
       firebase.onAuthStateChanged(firebase.auth, handleAuthState);
     } catch (error) {
       updateMerchantNav(null);
-      if (container) renderGate("無法檢查登入狀態", "會員登入服務暫時無法使用，請稍後再試。");
+      if (container) renderGate("無法連接驗證服務", error?.message || "請稍後再試。", `<a class="merchant-secondary-button" href="${rootPrefix()}index.html">返回首頁</a>`);
     }
   }
 

@@ -8,7 +8,10 @@ service firebase.storage {
 
     function isMerchant() {
       return isSignedIn()
-        && request.auth.token.email == "candy@virtrix.io";
+        && (
+          request.auth.uid == "q03M83yAzAfFMnHRZBcvDusykMy2"
+          || request.auth.uid == "bMUXPPo7KPX7bIL14fzCwvFExYG2"
+        );
     }
 
     match /products/{allPaths=**} {

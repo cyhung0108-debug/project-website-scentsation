@@ -15,6 +15,225 @@
   --page-gutter: 32px;
 }
 
+.merchant-auth-body,
+.merchant-dashboard-body {
+  min-height: 100vh;
+  background: #f7f5f0;
+}
+
+.merchant-auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.merchant-login-panel {
+  width: min(520px, 100%);
+  background: #fff;
+  border: 1px solid rgba(43, 34, 27, 0.12);
+  padding: 44px;
+}
+
+.merchant-login-brand {
+  display: inline-block;
+  margin-bottom: 28px;
+  color: #231f1b;
+  text-decoration: none;
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
+.merchant-login-panel h1 {
+  margin: 0 0 12px;
+  font-size: 30px;
+}
+
+.merchant-login-panel p {
+  margin: 0 0 22px;
+  color: #6b6258;
+  line-height: 1.7;
+}
+
+.merchant-login-form {
+  display: grid;
+  gap: 16px;
+}
+
+.merchant-login-form label {
+  display: grid;
+  gap: 8px;
+  color: #2b241f;
+  font-size: 15px;
+}
+
+.merchant-login-form input {
+  height: 48px;
+  border: 1px solid rgba(43, 34, 27, 0.2);
+  padding: 0 14px;
+  font: inherit;
+  background: #fff;
+}
+
+.merchant-google-login {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.merchant-login-message {
+  min-height: 24px;
+  margin-top: 18px !important;
+}
+
+.merchant-login-message[data-type="error"] {
+  color: #9f2727;
+}
+
+.merchant-login-uid {
+  background: #f5f1ea;
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+
+.merchant-login-home {
+  display: inline-block;
+  margin-top: 18px;
+  color: #2b241f;
+}
+
+.merchant-dashboard {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+
+.merchant-dashboard__sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px 18px 18px;
+  background: var(--sand);
+  color: #fff;
+}
+
+.merchant-dashboard__brand {
+  color: #fff;
+  text-decoration: none;
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
+.merchant-dashboard__sidebar p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  overflow-wrap: anywhere;
+}
+
+.merchant-dashboard__account {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.28);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.merchant-dashboard__sidebar nav {
+  display: grid;
+  gap: 6px;
+}
+
+.merchant-dashboard__sidebar button {
+  width: 100%;
+  min-height: 40px;
+  border: 0;
+  padding: 0 12px;
+  text-align: left;
+  color: rgba(255, 255, 255, 0.78);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.merchant-dashboard__sidebar button.is-active,
+.merchant-dashboard__sidebar button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.merchant-dashboard__logout {
+  margin-top: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.28) !important;
+}
+
+.merchant-dashboard__content {
+  min-width: 0;
+  padding: 24px 24px 28px;
+}
+
+.merchant-dashboard-section {
+  display: none;
+}
+
+.merchant-dashboard-section.is-active {
+  display: block;
+}
+
+.merchant-dashboard-section > h1 {
+  margin: 0 0 8px;
+  font-size: 26px;
+}
+
+.merchant-dashboard-section > p {
+  max-width: 680px;
+  margin: 0;
+  color: #6b6258;
+  line-height: 1.7;
+}
+
+.merchant-dashboard .merchant-page,
+.merchant-dashboard .merchant-gate {
+  max-width: none;
+  padding: 0;
+}
+
+@media (max-width: 900px) {
+  .merchant-dashboard {
+    display: block;
+  }
+
+  .merchant-dashboard__sidebar {
+    position: static;
+    height: auto;
+  }
+
+  .merchant-dashboard__sidebar nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .merchant-dashboard__content {
+    padding: 18px 16px 24px;
+  }
+}
+
+@media (max-width: 560px) {
+  .merchant-auth-page {
+    padding: 18px;
+  }
+
+  .merchant-login-panel {
+    padding: 28px 20px;
+  }
+
+  .merchant-dashboard__sidebar nav {
+    grid-template-columns: 1fr;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -2224,7 +2443,7 @@ h6 {
 }
 
 .merchant-page {
-  padding: 44px 0 72px;
+  padding: 18px 0 36px;
 }
 
 .merchant-page__heading,
@@ -2232,18 +2451,18 @@ h6 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
+  gap: 16px;
 }
 
 .merchant-page__heading {
-  padding-bottom: 28px;
+  padding-bottom: 18px;
   border-bottom: 1px solid #d8d4cc;
 }
 
 .merchant-page__heading h1,
 .merchant-gate h1 {
-  margin: 4px 0 8px;
-  font-size: 38px;
+  margin: 0;
+  font-size: 30px;
   font-weight: 400;
 }
 
@@ -2262,22 +2481,22 @@ h6 {
 .merchant-layout {
   display: grid;
   grid-template-columns: minmax(300px, 0.72fr) minmax(0, 1.28fr);
-  gap: 34px;
+  gap: 24px;
   align-items: start;
-  padding-top: 34px;
+  padding-top: 20px;
 }
 
 .merchant-form,
 .merchant-products-panel {
   border: 1px solid #d8d4cc;
   background: #fff;
-  padding: 26px;
+  padding: 20px;
 }
 
 .merchant-form h2,
 .merchant-products-panel h2 {
-  margin: 0 0 22px;
-  font-size: 22px;
+  margin: 0 0 16px;
+  font-size: 20px;
   font-weight: 400;
 }
 
@@ -2795,7 +3014,9 @@ h6 {
 .merchant-subcategory-drag {
   padding: 0;
   cursor: grab;
-  font-size: 18px;
+  font-size: 22px;
+  line-height: 1;
+  width: 36px;
 }
 
 .merchant-category-delete,
@@ -2911,7 +3132,8 @@ h6 {
 .merchant-image-drag {
   left: 13px;
   cursor: grab;
-  font-size: 18px;
+  font-size: 22px;
+  line-height: 1;
 }
 
 .merchant-image-remove {

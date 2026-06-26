@@ -10,6 +10,8 @@
     drawer: null,
     toastTimer: null,
     authMode: "login",
+    authEntryRequested: false,
+    authRedirect: "",
     authTab: "email",
     authBusy: false,
     currentUser: null,
@@ -46,6 +48,29 @@
 
   function homeUrl() {
     return `${rootPrefix()}index.html`;
+  }
+
+  function merchantDashboardUrl() {
+    return `${rootPrefix()}merchant-dashboard.html`;
+  }
+
+  function isMerchantUid(uid) {
+    const merchantIds = Array.isArray(window.merchantUids) ? window.merchantUids : [];
+    return merchantIds.includes(String(uid || "").trim());
+  }
+
+  function initAuthEntryFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const auth = String(params.get("auth") || "").trim();
+    const redirect = String(params.get("redirect") || "").trim();
+    if (redirect) state.authRedirect = redirect;
+    if (auth === "login") state.authEntryRequested = true;
+    if (!auth && !redirect) return;
+    params.delete("auth");
+    params.delete("redirect");
+    const nextQuery = params.toString();
+    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}${window.location.hash || ""}`;
+    window.history.replaceState({}, "", nextUrl);
   }
 
   function findProduct(productId) {
@@ -333,7 +358,17 @@
     try {
       const firebase = await getFirebaseService();
       firebase.onAuthStateChanged(firebase.auth, (user) => {
-        setCurrentUserFromFirebase(normalizeFirebaseUser(user));
+        const normalizedUser = normalizeFirebaseUser(user);
+        setCurrentUserFromFirebase(normalizedUser);
+        if (normalizedUser && state.authRedirect === "merchant-dashboard" && isMerchantUid(normalizedUser.uid)) {
+          state.authRedirect = "";
+          window.location.replace(merchantDashboardUrl());
+          return;
+        }
+        if (!normalizedUser && state.authEntryRequested) {
+          state.authEntryRequested = false;
+          openAuthModal("login");
+        }
       });
     } catch (error) {
       console.error("Firebase Authentication 初始化失敗：", error);
@@ -1592,6 +1627,7 @@
   window.scrollToProductImage = scrollToProductImage;
   window.showToast = showToast;
 
+  initAuthEntryFromUrl();
   ensureAuthModal();
   ensureSearchModal();
   renderCurrencyText();
