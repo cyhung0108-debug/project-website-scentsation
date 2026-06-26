@@ -3,7 +3,6 @@
   const sdkVersion = "12.15.0";
   const sdkBaseUrl = `https://www.gstatic.com/firebasejs/${sdkVersion}`;
   const databaseId = "scentsation";
-
   window.onlineShopFirebaseReady = (async function initializeFirebase() {
     if (!config?.apiKey || !config?.projectId || !config?.appId || !config?.storageBucket) {
       throw new Error("Firebase Web App 設定不完整。請檢查 assets/firebase-config.js。");
@@ -36,6 +35,145 @@
 
     function snapshotData(snapshot) {
       return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
+    }
+
+    function userProviderId(user) {
+      return user?.providerData?.[0]?.providerId || "password";
+    }
+
+    function normalizeTimestamp(value) {
+      if (!value) return "";
+      if (typeof value.toDate === "function") return value.toDate().toISOString();
+      if (value instanceof Date) return value.toISOString();
+      return value;
+    }
+
+    function normalizeUserRecord(snapshot) {
+      const data = { id: snapshot.id, ...snapshot.data() };
+      return {
+        ...data,
+        tags: Array.isArray(data.tags) ? data.tags : [],
+        createdAt: normalizeTimestamp(data.createdAt),
+        lastLoginAt: normalizeTimestamp(data.lastLoginAt),
+        updatedAt: normalizeTimestamp(data.updatedAt)
+      };
+    }
+
+    function normalizeMerchantRole(snapshot) {
+      if (!snapshot.exists()) return null;
+      const data = snapshot.data() || {};
+      return {
+        id: snapshot.id,
+        role: data.role || "",
+        active: data.active === true,
+        permissions: {
+          usersRead: data.permissions?.usersRead === true,
+          usersWrite: data.permissions?.usersWrite === true,
+          ordersRead: data.permissions?.ordersRead === true,
+          productsWrite: data.permissions?.productsWrite === true,
+          pagesWrite: data.permissions?.pagesWrite === true
+        }
+      };
+    }
+
+    function normalizeOrderRecord(snapshot) {
+      const data = { id: snapshot.id, ...snapshot.data() };
+      return {
+        ...data,
+        createdAt: normalizeTimestamp(data.createdAt),
+        updatedAt: normalizeTimestamp(data.updatedAt)
+      };
+    }
+
+    async function getMerchantRole(uid) {
+      if (!uid) return null;
+      const roleRef = firestoreSdk.doc(db, "merchantRoles", String(uid));
+      return normalizeMerchantRole(await firestoreSdk.getDoc(roleRef));
+    }
+
+    async function getUserProfile(uid) {
+      if (!uid) return null;
+      const snapshot = await firestoreSdk.getDoc(firestoreSdk.doc(db, "users", String(uid)));
+      return snapshot.exists() ? normalizeUserRecord(snapshot) : null;
+    }
+
+    async function upsertCurrentUserProfile(user, merchantRole = null) {
+      if (!user?.uid) return null;
+      const uid = String(user.uid);
+      const userRef = firestoreSdk.doc(db, "users", uid);
+      const currentSnapshot = await firestoreSdk.getDoc(userRef);
+      let role = merchantRole;
+      if (!role) {
+        try {
+          role = await getMerchantRole(uid);
+        } catch (error) {
+          if (error?.code !== "permission-denied") throw error;
+        }
+      }
+      const now = firestoreSdk.serverTimestamp();
+      const payload = {
+        uid,
+        email: user.email || "",
+        displayName: user.displayName || "",
+        providerId: userProviderId(user),
+        lastLoginAt: now,
+        role: role?.active && role.role === "merchant" ? "merchant" : "customer"
+      };
+      if (!currentSnapshot.exists()) {
+        payload.createdAt = now;
+        payload.status = "active";
+        payload.phone = "";
+        payload.note = "";
+        payload.tags = [];
+      }
+      await firestoreSdk.setDoc(userRef, payload, { merge: true });
+      return { uid, ...payload };
+    }
+
+    async function updateUserProfile(userId, updates) {
+      const uid = String(userId || "").trim();
+      if (!uid) throw new Error("缺少用戶 UID。");
+      const allowed = {};
+      if ("displayName" in updates) allowed.displayName = String(updates.displayName || "").trim();
+      if ("phone" in updates) allowed.phone = String(updates.phone || "").trim();
+      if ("status" in updates) allowed.status = updates.status === "blocked" ? "blocked" : "active";
+      if ("note" in updates) allowed.note = String(updates.note || "").trim();
+      if ("tags" in updates) {
+        allowed.tags = (Array.isArray(updates.tags) ? updates.tags : String(updates.tags || "").split(/[\n,]/))
+          .map((tag) => String(tag || "").trim())
+          .filter(Boolean)
+          .filter((tag, index, list) => list.indexOf(tag) === index);
+      }
+      allowed.updatedAt = firestoreSdk.serverTimestamp();
+      await firestoreSdk.setDoc(firestoreSdk.doc(db, "users", uid), allowed, { merge: true });
+      return { id: uid, ...allowed };
+    }
+
+    function listenUsers(callback, onError) {
+      return firestoreSdk.onSnapshot(
+        firestoreSdk.collection(db, "users"),
+        (snapshot) => callback(snapshot.docs.map(normalizeUserRecord)
+          .sort((a, b) => String(b.lastLoginAt || "").localeCompare(String(a.lastLoginAt || "")))),
+        onError
+      );
+    }
+
+    function listenUserProfile(uid, callback, onError) {
+      if (!uid) return () => {};
+      return firestoreSdk.onSnapshot(
+        firestoreSdk.doc(db, "users", String(uid)),
+        (snapshot) => callback(snapshot.exists() ? normalizeUserRecord(snapshot) : null),
+        onError
+      );
+    }
+
+    function listenOrders(callback, onError) {
+      return firestoreSdk.onSnapshot(
+        firestoreSdk.collection(db, "orders"),
+        (snapshot) => callback(snapshot.docs.map(normalizeOrderRecord)
+          .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))),
+        onError
+      );
     }
 
     async function getActiveProducts() {
@@ -170,6 +308,13 @@
       updateProductFields,
       deleteProduct,
       saveCategoryChanges,
+      getMerchantRole,
+      getUserProfile,
+      upsertCurrentUserProfile,
+      updateUserProfile,
+      listenUsers,
+      listenUserProfile,
+      listenOrders,
       uploadProductImage,
       deleteProductImage,
       isManagedStorageUrl

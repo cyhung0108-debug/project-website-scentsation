@@ -10,26 +10,57 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function merchantRolePath() {
+      return /databases/$(database)/documents/merchantRoles/$(request.auth.uid);
+    }
+
     function isMerchant() {
       return isSignedIn()
-        && (
-          request.auth.uid == "q03M83yAzAfFMnHRZBcvDusykMy2"
-          || request.auth.uid == "bMUXPPo7KPX7bIL14fzCwvFExYG2"
-        );
+        && exists(merchantRolePath())
+        && get(merchantRolePath()).data.role == "merchant"
+        && get(merchantRolePath()).data.active == true;
+    }
+
+    function canReadUsers() {
+      return isMerchant()
+        && get(merchantRolePath()).data.permissions.usersRead == true;
+    }
+
+    function canWriteUsers() {
+      return isMerchant()
+        && get(merchantRolePath()).data.permissions.usersWrite == true;
+    }
+
+    function canReadOrders() {
+      return isMerchant()
+        && get(merchantRolePath()).data.permissions.ordersRead == true;
+    }
+
+    function canWriteProducts() {
+      return isMerchant()
+        && get(merchantRolePath()).data.permissions.productsWrite == true;
     }
 
     match /products/{productId} {
       allow read: if resource.data.isActive == true || isMerchant();
-      allow create, update, delete: if isMerchant();
+      allow create, update, delete: if canWriteProducts();
     }
 
     match /categories/{categoryId} {
       allow read: if true;
-      allow create, update, delete: if isMerchant();
+      allow create, update, delete: if canWriteProducts();
+    }
+
+    match /merchantRoles/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
     }
 
     match /users/{userId} {
-      allow read, create, update, delete: if isOwner(userId);
+      allow read: if isOwner(userId) || canReadUsers();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || canWriteUsers();
+      allow delete: if false;
 
       match /cart/{itemId} {
         allow read, create, update, delete: if isOwner(userId);
@@ -38,7 +69,7 @@ service cloud.firestore {
 
     match /orders/{orderId} {
       allow read: if isSignedIn()
-        && (resource.data.userId == request.auth.uid || isMerchant());
+        && (resource.data.userId == request.auth.uid || canReadOrders());
       allow create, update, delete: if isMerchant();
     }
 

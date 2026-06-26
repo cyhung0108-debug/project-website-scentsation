@@ -1,14 +1,12 @@
 ﻿(function () {
-  const merchantUids = [
-    "q03M83yAzAfFMnHRZBcvDusykMy2",
-    "bMUXPPo7KPX7bIL14fzCwvFExYG2"
-  ];
-  const MERCHANT_UID_SET = new Set(merchantUids.map((uid) => String(uid || "").trim()).filter(Boolean));
   const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
   const container = document.querySelector("[data-merchant-page]");
   const store = window.ONLINE_SHOP_PRODUCT_ADMIN_STORE;
   let currentMerchant = null;
+  let currentMerchantRole = null;
+  let currentUsers = [];
   let editingProductId = null;
+  let editingUserId = null;
   let deletingProductId = null;
   let deletingProductImages = [];
   let editorCategoryAssignments = [];
@@ -18,8 +16,7 @@
   let categoryDraft = [];
   let originalCategoryIds = [];
   let categorySortables = [];
-
-  window.merchantUids = merchantUids;
+  let dashboardUnsubscribers = [];
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -38,8 +35,12 @@
     return uniqueStrings(String(value || "").split(/\r?\n/));
   }
 
-  function isAllowedMerchant(user) {
-    return MERCHANT_UID_SET.has(String(user?.uid || "").trim());
+  function isAllowedMerchant(user, role = currentMerchantRole) {
+    return Boolean(user?.uid && role?.active === true && role.role === "merchant");
+  }
+
+  function hasPermission(permission, role = currentMerchantRole) {
+    return role?.permissions?.[permission] === true;
   }
 
   function rootPrefix() {
@@ -54,6 +55,14 @@
     return `${rootPrefix()}index.html?auth=login&redirect=merchant-dashboard`;
   }
 
+  function storefrontPreviewUrl() {
+    return `${rootPrefix()}index.html?storePreview=guest`;
+  }
+
+  function isStorePreviewGuest() {
+    return new URLSearchParams(window.location.search).get("storePreview") === "guest";
+  }
+
   function isMerchantAreaPage() {
     return ["merchant", "merchant-dashboard"].includes(document.body?.dataset.page || "");
   }
@@ -64,6 +73,7 @@
 
   function updateMerchantNav(user) {
     document.querySelectorAll("[data-merchant-nav]").forEach((link) => link.remove());
+    if (isStorePreviewGuest()) return;
     if (!isAllowedMerchant(user)) return;
 
     document.querySelectorAll(".desktop-nav").forEach((nav) => {
@@ -108,6 +118,54 @@
     return messages[code] || error?.message || fallback;
   }
 
+  function formatDateTime(value) {
+    if (!value) return "未有資料";
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString("zh-HK", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  }
+
+  function formatDashboardPrice(value) {
+    return `HK$${Number(value || 0).toFixed(2)}`;
+  }
+
+  function orderAmount(order) {
+    return Number(order.total || order.totalAmount || order.amount || order.grandTotal || 0);
+  }
+
+  function orderCustomerEmail(order) {
+    return order.customerEmail || order.email || order.customer?.email || "未有資料";
+  }
+
+  function orderStatusLabel(status) {
+    const labels = {
+      pending: "待處理",
+      paid: "已付款",
+      processing: "處理中",
+      shipped: "已出貨",
+      completed: "已完成",
+      cancelled: "已取消"
+    };
+    return labels[status] || status || "未有狀態";
+  }
+
+  function cleanupDashboardListeners() {
+    dashboardUnsubscribers.forEach((unsubscribe) => {
+      try {
+        unsubscribe?.();
+      } catch (error) {
+        console.warn("無法停止後台資料監聽。", error);
+      }
+    });
+    dashboardUnsubscribers = [];
+  }
+
   function showMerchantToast(message) {
     if (window.showToast) {
       window.showToast(message);
@@ -124,28 +182,48 @@
   function renderMerchantDashboardShell(user) {
     if (!container) return;
     document.title = "\u5546\u6236\u5f8c\u53f0 - APOTHEKE";
+    const sections = [
+      hasPermission("usersRead") ? { id: "users", label: "\u7528\u6236\u7ba1\u7406" } : null,
+      hasPermission("ordersRead") ? { id: "sales", label: "\u92b7\u552e\u7ba1\u7406" } : null,
+      hasPermission("productsWrite") ? { id: "products", label: "\u7522\u54c1\u7ba1\u7406" } : null,
+      hasPermission("pagesWrite") ? { id: "site", label: "\u7db2\u9801\u7ba1\u7406" } : null
+    ].filter(Boolean);
+    const activeSection = sections[0]?.id || "none";
+    const navHtml = sections.length
+      ? sections.map((section) => `<button class="${section.id === activeSection ? "is-active" : ""}" type="button" data-merchant-section="${section.id}">${section.label}</button>`).join("")
+      : '<p class="merchant-dashboard__empty-nav">此商戶暫時沒有可用功能。</p>';
     container.innerHTML = `
       <section class="merchant-dashboard">
         <aside class="merchant-dashboard__sidebar" aria-label="\u5546\u6236\u5f8c\u53f0\u5c0e\u89bd">
-          <a class="merchant-dashboard__brand" href="${rootPrefix()}index.html" target="_blank" rel="noopener noreferrer">APOTHEKE</a>
-          <nav>
-            <button type="button" data-merchant-section="users">\u7528\u6236\u7ba1\u7406</button>
-            <button type="button" data-merchant-section="sales">\u92b7\u552e\u7ba1\u7406</button>
-            <button class="is-active" type="button" data-merchant-section="products">\u7522\u54c1\u7ba1\u7406</button>
-          </nav>
+          <a class="merchant-dashboard__brand" href="${storefrontPreviewUrl()}" target="_blank" rel="noopener noreferrer">APOTHEKE</a>
+          <nav>${navHtml}</nav>
           <div class="merchant-dashboard__account">${escapeHtml(user.displayName || user.email || "\u5546\u6236\u5e33\u865f")}</div>
           <button class="merchant-dashboard__logout" type="button" data-merchant-dashboard-logout>\u767b\u51fa</button>
         </aside>
         <main class="merchant-dashboard__content">
-          <section class="merchant-dashboard-section" data-merchant-panel="users">
+          <section class="merchant-dashboard-section ${activeSection === "users" ? "is-active" : ""}" data-merchant-panel="users">
             <h1>\u7528\u6236\u7ba1\u7406</h1>
-            <p>\u9019\u88e1\u6703\u653e\u6703\u54e1\u5217\u8868\u3001\u6703\u54e1\u8cc7\u6599\u548c\u6b0a\u9650\u7ba1\u7406\u3002\u6b64\u5340\u76ee\u524d\u5148\u4fdd\u7559\u57fa\u672c\u7248\u9762\u3002</p>
+            <div class="merchant-data-panel" data-users-panel>
+              <div class="merchant-stat-grid">
+                <article class="merchant-stat-card"><span>\u7e3d\u7528\u6236\u6578</span><strong data-total-users>0</strong></article>
+              </div>
+              <p class="merchant-data-message" data-users-message>\u6b63\u5728\u8f09\u5165\u7528\u6236\u8cc7\u6599\u2026</p>
+              <div class="merchant-table-wrap" data-users-table></div>
+            </div>
           </section>
-          <section class="merchant-dashboard-section" data-merchant-panel="sales">
+          <section class="merchant-dashboard-section ${activeSection === "sales" ? "is-active" : ""}" data-merchant-panel="sales">
             <h1>\u92b7\u552e\u7ba1\u7406</h1>
-            <p>\u9019\u88e1\u6703\u653e\u8a02\u55ae\u3001\u4ed8\u6b3e\u3001\u51fa\u8ca8\u548c\u92b7\u552e\u5831\u8868\u3002\u6b64\u5340\u76ee\u524d\u5148\u4fdd\u7559\u57fa\u672c\u7248\u9762\u3002</p>
+            <div class="merchant-data-panel" data-orders-panel>
+              <div class="merchant-stat-grid">
+                <article class="merchant-stat-card"><span>\u4eca\u65e5\u92b7\u552e\u984d</span><strong data-today-sales>HK$0.00</strong></article>
+                <article class="merchant-stat-card"><span>\u7e3d\u8a02\u55ae\u6578</span><strong data-total-orders>0</strong></article>
+                <article class="merchant-stat-card"><span>\u7e3d\u92b7\u552e\u984d</span><strong data-total-sales>HK$0.00</strong></article>
+              </div>
+              <p class="merchant-data-message" data-orders-message>\u6b63\u5728\u8f09\u5165\u8a02\u55ae\u8cc7\u6599\u2026</p>
+              <div class="merchant-table-wrap" data-orders-table></div>
+            </div>
           </section>
-          <section class="merchant-dashboard-section is-active" data-merchant-panel="products">
+          <section class="merchant-dashboard-section ${activeSection === "products" ? "is-active" : ""}" data-merchant-panel="products">
             <div class="merchant-page">
               <div class="merchant-page__heading">
                 <div><h1>\u7522\u54c1\u7ba1\u7406</h1></div>
@@ -163,8 +241,197 @@
               </section>
             </div>
           </section>
+          <section class="merchant-dashboard-section ${activeSection === "site" ? "is-active" : ""}" data-merchant-panel="site">
+            <h1>\u7db2\u9801\u7ba1\u7406</h1>
+            <div class="merchant-data-panel">
+              <p class="merchant-data-message">\u9019\u500b\u5340\u57df\u5c07\u7528\u65bc\u7ba1\u7406\u9996\u9801\u5167\u5bb9\u3001\u516c\u53f8\u8cc7\u6599\u548c\u7db2\u9801\u8a2d\u5b9a\u3002\u76ee\u524d\u5148\u4fdd\u7559\u57fa\u672c\u7248\u9762\u3002</p>
+            </div>
+          </section>
         </main>
       </section>`;
+  }
+
+  function renderUsers(users) {
+    currentUsers = Array.isArray(users) ? users : [];
+    const total = document.querySelector("[data-total-users]");
+    const message = document.querySelector("[data-users-message]");
+    const table = document.querySelector("[data-users-table]");
+    if (!total || !message || !table) return;
+    total.textContent = String(currentUsers.length);
+    if (!currentUsers.length) {
+      message.textContent = "暫時沒有用戶資料。";
+      table.innerHTML = "";
+      return;
+    }
+    message.textContent = "";
+    table.innerHTML = `
+      <table class="merchant-data-table">
+        <thead>
+          <tr><th>電郵</th><th>顯示名稱</th><th>角色</th><th>狀態</th><th>電話</th><th>備註</th><th>建立時間</th><th>最後登入時間</th>${hasPermission("usersWrite") ? "<th>操作</th>" : ""}</tr>
+        </thead>
+        <tbody>
+          ${currentUsers.map((user) => `
+            <tr>
+              <td>${escapeHtml(user.email || "未有電郵")}</td>
+              <td>${escapeHtml(user.displayName || "未有名稱")}</td>
+              <td>${user.role === "merchant" ? "商戶" : "顧客"}</td>
+              <td>${user.status === "blocked" ? "已封鎖" : "正常"}</td>
+              <td>${escapeHtml(user.phone || "")}</td>
+              <td>${escapeHtml(user.note || "")}</td>
+              <td>${escapeHtml(formatDateTime(user.createdAt))}</td>
+              <td>${escapeHtml(formatDateTime(user.lastLoginAt))}</td>
+              ${hasPermission("usersWrite") ? `<td><button class="merchant-table-action" type="button" data-edit-user="${escapeHtml(user.uid || user.id)}">修改</button></td>` : ""}
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>`;
+  }
+
+  function renderUsersError(error) {
+    const message = document.querySelector("[data-users-message]");
+    const table = document.querySelector("[data-users-table]");
+    if (!message) return;
+    message.dataset.type = "error";
+    message.textContent = error?.code === "permission-denied"
+      ? "目前 Firestore Rules 未允許商戶讀取全部 users。請按回報中的步驟更新 Rules。"
+      : merchantErrorMessage(error, "無法讀取用戶資料。");
+    if (table) table.innerHTML = "";
+  }
+
+  function editableUserById(userId) {
+    return currentUsers.find((user) => String(user.uid || user.id) === String(userId)) || null;
+  }
+
+  function userEditorForm(user) {
+    const tags = Array.isArray(user.tags) ? user.tags.join("\n") : "";
+    return `
+      <h2 id="merchantUserTitle">修改用戶資料</h2>
+      <form class="merchant-form merchant-user-form" data-merchant-user-form>
+        <p class="merchant-user-readonly">電郵：${escapeHtml(user.email || "未有電郵")}</p>
+        <p class="merchant-user-readonly">UID：${escapeHtml(user.uid || user.id)}</p>
+        <label>顯示名稱<input type="text" name="displayName" value="${escapeHtml(user.displayName || "")}"></label>
+        <label>電話<input type="text" name="phone" value="${escapeHtml(user.phone || "")}"></label>
+        <label>狀態<select name="status"><option value="active" ${user.status !== "blocked" ? "selected" : ""}>active</option><option value="blocked" ${user.status === "blocked" ? "selected" : ""}>blocked</option></select></label>
+        <label>備註<textarea name="note" rows="4">${escapeHtml(user.note || "")}</textarea></label>
+        <label>標籤<textarea name="tags" rows="3" placeholder="每行一個標籤">${escapeHtml(tags)}</textarea></label>
+        <p class="merchant-message" data-merchant-user-message aria-live="polite"></p>
+        <div class="merchant-modal__actions"><button class="merchant-secondary-button" type="button" data-close-merchant-modal>取消</button><button class="merchant-primary-button" type="submit" data-save-user>儲存</button></div>
+      </form>`;
+  }
+
+  function openUserEditor(userId) {
+    if (!hasPermission("usersWrite")) return showMerchantToast("你沒有修改用戶資料的權限。");
+    const user = editableUserById(userId);
+    if (!user) return showMerchantToast("找不到此用戶。");
+    editingUserId = String(user.uid || user.id);
+    ensureMerchantModals();
+    document.querySelector("[data-merchant-user-content]").innerHTML = userEditorForm(user);
+    openModal(document.querySelector("#merchantUserModal"));
+  }
+
+  function setUserEditorError(message) {
+    const node = document.querySelector("[data-merchant-user-message]");
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.type = "error";
+  }
+
+  async function saveUserForm(form) {
+    if (!editingUserId || !hasPermission("usersWrite")) return setUserEditorError("你沒有修改用戶資料的權限。");
+    const data = new FormData(form);
+    const button = form.querySelector("[data-save-user]");
+    button.disabled = true;
+    button.textContent = "儲存中…";
+    try {
+      const firebase = await firebaseService();
+      await firebase.updateUserProfile(editingUserId, {
+        displayName: data.get("displayName"),
+        phone: data.get("phone"),
+        status: data.get("status"),
+        note: data.get("note"),
+        tags: data.get("tags")
+      });
+      closeMerchantModals();
+      showMerchantToast("用戶資料已更新");
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "儲存";
+      setUserEditorError(merchantErrorMessage(error, "無法更新用戶資料。"));
+    }
+  }
+
+  function isToday(value) {
+    if (!value) return false;
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return false;
+    const now = new Date();
+    return date.getFullYear() === now.getFullYear()
+      && date.getMonth() === now.getMonth()
+      && date.getDate() === now.getDate();
+  }
+
+  function renderOrders(orders) {
+    const todaySales = document.querySelector("[data-today-sales]");
+    const totalOrders = document.querySelector("[data-total-orders]");
+    const totalSales = document.querySelector("[data-total-sales]");
+    const message = document.querySelector("[data-orders-message]");
+    const table = document.querySelector("[data-orders-table]");
+    if (!todaySales || !totalOrders || !totalSales || !message || !table) return;
+
+    const todayTotal = orders.filter((order) => isToday(order.createdAt)).reduce((sum, order) => sum + orderAmount(order), 0);
+    const allTotal = orders.reduce((sum, order) => sum + orderAmount(order), 0);
+    todaySales.textContent = formatDashboardPrice(todayTotal);
+    totalOrders.textContent = String(orders.length);
+    totalSales.textContent = formatDashboardPrice(allTotal);
+
+    if (!orders.length) {
+      message.textContent = "暫時沒有訂單資料。";
+      table.innerHTML = "";
+      return;
+    }
+
+    message.textContent = "";
+    table.innerHTML = `
+      <table class="merchant-data-table">
+        <thead>
+          <tr><th>訂單編號</th><th>顧客 email</th><th>金額</th><th>狀態</th><th>建立時間</th></tr>
+        </thead>
+        <tbody>
+          ${orders.slice(0, 20).map((order) => `
+            <tr>
+              <td>${escapeHtml(order.orderNumber || order.id)}</td>
+              <td>${escapeHtml(orderCustomerEmail(order))}</td>
+              <td>${formatDashboardPrice(orderAmount(order))}</td>
+              <td>${escapeHtml(orderStatusLabel(order.status))}</td>
+              <td>${escapeHtml(formatDateTime(order.createdAt))}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>`;
+  }
+
+  function renderOrdersError(error) {
+    const message = document.querySelector("[data-orders-message]");
+    const table = document.querySelector("[data-orders-table]");
+    if (!message) return;
+    message.dataset.type = "error";
+    message.textContent = merchantErrorMessage(error, "無法讀取訂單資料。");
+    if (table) table.innerHTML = "";
+  }
+
+  async function startDashboardListeners(firebase, user) {
+    cleanupDashboardListeners();
+    try {
+      await firebase.upsertCurrentUserProfile?.(user, currentMerchantRole);
+    } catch (error) {
+      console.warn("無法同步目前商戶資料。", error);
+    }
+    if (hasPermission("usersRead") && firebase.listenUsers) {
+      dashboardUnsubscribers.push(firebase.listenUsers(renderUsers, renderUsersError));
+    }
+    if (hasPermission("ordersRead") && firebase.listenOrders) {
+      dashboardUnsubscribers.push(firebase.listenOrders(renderOrders, renderOrdersError));
+    }
   }
   function cleanupProductImages(urls) {
     Promise.allSettled(uniqueStrings(urls).map((url) => store.deleteProductImage(url)))
@@ -241,6 +508,14 @@
       modal.innerHTML = `<div class="merchant-modal__overlay" data-close-merchant-modal></div><div class="merchant-modal__panel merchant-modal__panel--categories" role="dialog" aria-modal="true" aria-labelledby="merchantCategoryTitle"><button class="merchant-modal__close" type="button" data-close-merchant-modal aria-label="關閉分類管理視窗">×</button><div data-merchant-category-content></div></div>`;
       document.body.appendChild(modal);
     }
+    if (!document.querySelector("#merchantUserModal")) {
+      const modal = document.createElement("div");
+      modal.id = "merchantUserModal";
+      modal.className = "merchant-modal";
+      modal.setAttribute("aria-hidden", "true");
+      modal.innerHTML = `<div class="merchant-modal__overlay" data-close-merchant-modal></div><div class="merchant-modal__panel merchant-modal__panel--confirm" role="dialog" aria-modal="true" aria-labelledby="merchantUserTitle"><button class="merchant-modal__close" type="button" data-close-merchant-modal aria-label="關閉用戶編輯視窗">×</button><div data-merchant-user-content></div></div>`;
+      document.body.appendChild(modal);
+    }
   }
 
   function openModal(modal) {
@@ -266,6 +541,7 @@
     });
     releaseEditorPreviews();
     editingProductId = null;
+    editingUserId = null;
     deletingProductId = null;
     deletingProductImages = [];
     editorCategoryAssignments = [];
@@ -600,17 +876,33 @@
   }
 
   async function handleAuthState(user) {
-    updateMerchantNav(user);
-
     if (!user) {
       currentMerchant = null;
+      currentMerchantRole = null;
+      cleanupDashboardListeners();
       closeMerchantModals();
+      updateMerchantNav(null);
       if (container) window.location.replace(storefrontLoginUrl());
       return;
     }
 
-    if (!isAllowedMerchant(user)) {
+    let merchantRole = null;
+    try {
+      const firebase = await firebaseService();
+      merchantRole = await firebase.getMerchantRole?.(user.uid);
+      currentMerchantRole = merchantRole;
+      await firebase.upsertCurrentUserProfile?.(user, merchantRole);
+    } catch (error) {
+      currentMerchantRole = null;
+      console.warn("無法讀取或同步商戶權限。", error);
+    }
+
+    updateMerchantNav(user);
+
+    if (!isAllowedMerchant(user, merchantRole)) {
       currentMerchant = null;
+      currentMerchantRole = null;
+      cleanupDashboardListeners();
       closeMerchantModals();
       if (container) {
         renderGate("沒有權限", `帳號 ${escapeHtml(user.email || user.uid || "")} 沒有商戶後台權限。`, `<a class="merchant-secondary-button" href="${rootPrefix()}index.html">返回首頁</a>`);
@@ -618,7 +910,7 @@
       return;
     }
 
-    if (isStorefrontPage()) {
+    if (isStorefrontPage() && !isStorePreviewGuest()) {
       window.location.replace(merchantDashboardUrl());
       return;
     }
@@ -632,14 +924,22 @@
       currentMerchant = user;
       renderGate("正在載入後台", "請稍候…");
       try {
+        const firebase = await firebaseService();
         await store.initializeMerchantProducts();
         renderDashboard(user);
+        await startDashboardListeners(firebase, user);
       } catch (error) {
         renderGate("後台載入失敗", error.message || "目前無法讀取商品資料。", `<button class="merchant-secondary-button" type="button" data-merchant-dashboard-logout>登出</button>`);
       }
     }
   }
   document.addEventListener("submit", async (event) => {
+    const userForm = event.target.closest("[data-merchant-user-form]");
+    if (userForm && currentMerchant) {
+      event.preventDefault();
+      await saveUserForm(userForm);
+      return;
+    }
     const form = event.target.closest("[data-merchant-editor-form]");
     if (!form || !currentMerchant) return;
     event.preventDefault();
@@ -692,6 +992,8 @@
     }
     if (event.target.closest("[data-save-categories]")) return saveCategoryManager();
     if (event.target.closest("[data-add-product]")) return openEditor();
+    const editUserButton = event.target.closest("[data-edit-user]");
+    if (editUserButton) return openUserEditor(editUserButton.dataset.editUser);
     const editButton = event.target.closest("[data-edit-product]");
     if (editButton) return openEditor(editButton.dataset.editProduct);
     const removeImage = event.target.closest("[data-remove-editor-image]");

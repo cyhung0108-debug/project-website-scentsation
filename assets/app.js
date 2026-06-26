@@ -20,6 +20,8 @@
     priceLimit: 0,
     sort: "relevant"
   };
+  let currentUserProfileUnsub = null;
+  const AUTH_NOTICE_KEY = "onlineShopAuthNotice";
 
   const $ = (selector, scope = document) => scope.querySelector(selector);
   const $$ = (selector, scope = document) => Array.from(scope.querySelectorAll(selector));
@@ -50,13 +52,31 @@
     return `${rootPrefix()}index.html`;
   }
 
+  function queueAuthNotice(message) {
+    try {
+      window.sessionStorage.setItem(AUTH_NOTICE_KEY, String(message || ""));
+    } catch (error) {
+      console.warn("無法保存登入提示。", error);
+    }
+  }
+
+  function consumeAuthNotice() {
+    try {
+      const message = window.sessionStorage.getItem(AUTH_NOTICE_KEY);
+      if (!message) return;
+      window.sessionStorage.removeItem(AUTH_NOTICE_KEY);
+      showToast(message);
+    } catch (error) {
+      console.warn("無法讀取登入提示。", error);
+    }
+  }
+
   function merchantDashboardUrl() {
     return `${rootPrefix()}merchant-dashboard.html`;
   }
 
-  function isMerchantUid(uid) {
-    const merchantIds = Array.isArray(window.merchantUids) ? window.merchantUids : [];
-    return merchantIds.includes(String(uid || "").trim());
+  function isStorePreviewGuest() {
+    return new URLSearchParams(window.location.search).get("storePreview") === "guest";
   }
 
   function initAuthEntryFromUrl() {
@@ -255,7 +275,7 @@
   }
 
   function setCurrentUserFromFirebase(user) {
-    state.currentUser = user || null;
+    state.currentUser = isStorePreviewGuest() ? null : user || null;
     if (!state.currentUser) closeAccountMenu();
     updateAuthNav();
   }
@@ -357,13 +377,73 @@
   async function initFirebaseAuth() {
     try {
       const firebase = await getFirebaseService();
-      firebase.onAuthStateChanged(firebase.auth, (user) => {
+      firebase.onAuthStateChanged(firebase.auth, async (user) => {
         const normalizedUser = normalizeFirebaseUser(user);
+        if (currentUserProfileUnsub) {
+          currentUserProfileUnsub();
+          currentUserProfileUnsub = null;
+        }
+        if (!user) {
+          setCurrentUserFromFirebase(null);
+          if (state.authEntryRequested) {
+            state.authEntryRequested = false;
+            openAuthModal("login");
+          }
+          return;
+        }
+        let merchantRole = null;
+        try {
+          merchantRole = await firebase.getMerchantRole?.(user.uid);
+          await firebase.upsertCurrentUserProfile?.(user, merchantRole);
+        } catch (error) {
+          console.warn("無法同步用戶基本資料。", error);
+        }
+        try {
+          const profile = await firebase.getUserProfile?.(user.uid);
+          if (profile?.status === "blocked" && profile?.role !== "merchant") {
+            queueAuthNotice("你的帳號已被封鎖，請聯絡商戶。");
+            await firebase.signOut(firebase.auth);
+            setCurrentUserFromFirebase(null);
+            window.location.replace(homeUrl());
+            return;
+          }
+        } catch (error) {
+          console.warn("無法讀取用戶狀態。", error);
+        }
         setCurrentUserFromFirebase(normalizedUser);
-        if (normalizedUser && state.authRedirect === "merchant-dashboard" && isMerchantUid(normalizedUser.uid)) {
+        currentUserProfileUnsub = firebase.listenUserProfile?.(user.uid, async (profile) => {
+          if (!profile || profile.role === "merchant" || profile.status !== "blocked") return;
+          queueAuthNotice("你的帳號已被封鎖，請聯絡商戶。");
+          try {
+            await firebase.signOut(firebase.auth);
+          } catch (error) {
+            console.warn("無法登出已封鎖帳號。", error);
+          }
+          setCurrentUserFromFirebase(null);
+          window.location.replace(homeUrl());
+        });
+        if (normalizedUser && state.authRedirect === "merchant-dashboard" && merchantRole?.active === true && merchantRole.role === "merchant") {
           state.authRedirect = "";
           window.location.replace(merchantDashboardUrl());
           return;
+        }
+        return;
+        if (user) {
+          firebase.upsertCurrentUserProfile?.(user).catch((error) => {
+            console.warn("無法同步用戶基本資料。", error);
+          });
+        }
+        if (user && normalizedUser && state.authRedirect === "merchant-dashboard") {
+          firebase.getMerchantRole?.(user.uid)
+            .then((role) => {
+              if (role?.active === true && role.role === "merchant") {
+                state.authRedirect = "";
+                window.location.replace(merchantDashboardUrl());
+              }
+            })
+            .catch((error) => {
+              console.warn("無法讀取商戶權限。", error);
+            });
         }
         if (!normalizedUser && state.authEntryRequested) {
           state.authEntryRequested = false;
@@ -1642,6 +1722,7 @@
   window.localStorage.removeItem(LEGACY_USERS_KEY);
   window.localStorage.removeItem("onlineShopCurrentUser");
   updateAuthNav();
+  consumeAuthNotice();
   initFirebaseAuth();
   loadCart();
   renderCart();
