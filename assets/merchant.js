@@ -19,6 +19,7 @@
   let originalCategoryIds = [];
   let categorySortables = [];
   let dashboardUnsubscribers = [];
+  const BACKOFFICE_ROLES = ["super_admin", "admin", "staff"];
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -37,8 +38,16 @@
     return uniqueStrings(String(value || "").split(/\r?\n/));
   }
 
+  function isBackofficeRole(roleValue) {
+    return BACKOFFICE_ROLES.includes(String(roleValue || "").trim());
+  }
+
+  function isActiveBackofficeUser(role) {
+    return Boolean(role && role.active === true && isBackofficeRole(role.role));
+  }
+
   function isAllowedMerchant(user, role = currentMerchantRole) {
-    return Boolean(user?.uid && role?.active === true && ["super_admin", "admin", "staff"].includes(role.role));
+    return Boolean(user?.uid && isActiveBackofficeUser(role));
   }
 
   function hasPermission(permission, role = currentMerchantRole) {
@@ -102,7 +111,7 @@
     const role = String(profile?.role || "").trim();
     return {
       role,
-      active: profile?.status !== "blocked" && ["super_admin", "admin", "staff"].includes(role),
+      active: profile?.status !== "blocked" && isBackofficeRole(role),
       permissions: {}
     };
   }

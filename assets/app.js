@@ -29,6 +29,7 @@
   let currentUserProfileUnsub = null;
   let currentUserOrdersUnsub = null;
   const AUTH_NOTICE_KEY = "onlineShopAuthNotice";
+  const BACKOFFICE_ROLES = ["super_admin", "admin", "staff"];
 
   const $ = (selector, scope = document) => scope.querySelector(selector);
   const $$ = (selector, scope = document) => Array.from(scope.querySelectorAll(selector));
@@ -110,8 +111,12 @@
     return new URLSearchParams(window.location.search).get("preview") === "store";
   }
 
-  function isDashboardRole(role) {
-    return ["super_admin", "admin", "staff"].includes(String(role || "").trim());
+  function isBackofficeRole(roleValue) {
+    return BACKOFFICE_ROLES.includes(String(roleValue || "").trim());
+  }
+
+  function isActiveBackofficeUser(role) {
+    return Boolean(role && role.active === true && isBackofficeRole(role.role));
   }
 
   function initAuthEntryFromUrl() {
@@ -466,7 +471,10 @@
         }
 
         const userRole = String(profile?.role || "").trim();
-        const canUseDashboard = isDashboardRole(userRole) && profile?.status !== "blocked";
+        const effectiveBackofficeRole = isActiveBackofficeUser(merchantRole)
+          ? merchantRole
+          : { role: userRole, active: profile?.status !== "blocked" };
+        const canUseDashboard = isActiveBackofficeUser(effectiveBackofficeRole);
 
         if (profile?.status === "blocked") {
           state.authPendingAction = "";
@@ -516,6 +524,15 @@
         }
 
         if (document.body?.dataset.page === "profile" && canUseDashboard) {
+          window.location.replace(merchantDashboardUrl());
+          return;
+        }
+
+        if (normalizedUser && canUseDashboard && !isStorePreviewGuest() && !["merchant", "merchant-dashboard", "profile"].includes(document.body?.dataset.page || "")) {
+          if (state.authPendingAction) {
+            state.authPendingAction = "";
+            closeAuthModal();
+          }
           window.location.replace(merchantDashboardUrl());
           return;
         }
@@ -690,7 +707,7 @@
         const acceptedInvite = await firebase.acceptUserInvite?.(state.authInviteToken, credential.user);
         state.authInviteToken = "";
         state.authPendingInvite = null;
-        if (isDashboardRole(acceptedInvite?.role)) window.location.replace(merchantDashboardUrl());
+        if (isBackofficeRole(acceptedInvite?.role)) window.location.replace(merchantDashboardUrl());
       }
     } catch (error) {
       state.authPendingAction = "";
@@ -732,7 +749,7 @@
           const acceptedInvite = await firebase.acceptUserInvite?.(state.authInviteToken, credential.user);
           state.authInviteToken = "";
           state.authPendingInvite = null;
-          if (isDashboardRole(acceptedInvite?.role)) window.location.replace(merchantDashboardUrl());
+          if (isBackofficeRole(acceptedInvite?.role)) window.location.replace(merchantDashboardUrl());
         } catch (inviteError) {
           await firebase.signOut(firebase.auth);
           throw inviteError;
