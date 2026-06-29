@@ -92,6 +92,82 @@ service cloud.firestore {
         && data.updatedBy == request.auth.uid;
     }
 
+    function isFooterPayload(data) {
+      return data.keys().hasOnly([
+          "type",
+          "logoText",
+          "description",
+          "phone",
+          "email",
+          "address",
+          "copyright",
+          "instagramUrl",
+          "facebookUrl",
+          "isActive",
+          "updatedAt",
+          "updatedBy"
+        ])
+        && data.type == "footer"
+        && data.logoText is string
+        && data.logoText.size() <= 80
+        && data.description is string
+        && data.description.size() <= 280
+        && data.phone is string
+        && data.phone.size() <= 60
+        && data.email is string
+        && data.email.size() <= 120
+        && data.address is string
+        && data.address.size() <= 280
+        && data.copyright is string
+        && data.copyright.size() <= 160
+        && data.instagramUrl is string
+        && data.instagramUrl.size() <= 500
+        && data.facebookUrl is string
+        && data.facebookUrl.size() <= 500
+        && data.isActive is bool
+        && data.updatedAt is timestamp
+        && data.updatedBy is string
+        && data.updatedBy == request.auth.uid;
+    }
+
+    function isContactPayload(data) {
+      return data.keys().hasOnly([
+          "type",
+          "title",
+          "subtitle",
+          "address",
+          "phone",
+          "email",
+          "openingHours",
+          "googleMapEmbedUrl",
+          "other",
+          "isActive",
+          "updatedAt",
+          "updatedBy"
+        ])
+        && data.type == "contact"
+        && data.title is string
+        && data.title.size() <= 120
+        && data.subtitle is string
+        && data.subtitle.size() <= 240
+        && data.address is string
+        && data.address.size() <= 280
+        && data.phone is string
+        && data.phone.size() <= 60
+        && data.email is string
+        && data.email.size() <= 120
+        && data.openingHours is string
+        && data.openingHours.size() <= 160
+        && data.googleMapEmbedUrl is string
+        && data.googleMapEmbedUrl.size() <= 1000
+        && data.other is string
+        && data.other.size() <= 360
+        && data.isActive is bool
+        && data.updatedAt is timestamp
+        && data.updatedBy is string
+        && data.updatedBy == request.auth.uid;
+    }
+
     match /merchantRoles/{userId} {
       allow read: if isOwner(userId) || isMerchant();
       allow create, update, delete: if false;
@@ -123,9 +199,12 @@ service cloud.firestore {
 
     match /siteContent/{docId} {
       allow read: if true;
-      allow create, update: if docId == "home"
-        && canWriteSiteContent()
-        && isHomeHeroPayload(request.resource.data);
+      allow create, update: if canWriteSiteContent()
+        && (
+          (docId == "home" && isHomeHeroPayload(request.resource.data))
+          || (docId == "footer" && isFooterPayload(request.resource.data))
+          || (docId == "contact" && isContactPayload(request.resource.data))
+        );
       allow delete: if false;
     }
 

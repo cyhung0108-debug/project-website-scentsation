@@ -15,8 +15,12 @@
     authTab: "email",
     authBusy: false,
     currentUser: null,
+    contactContent: null,
+    contactContentLoadStarted: false,
     homeHero: null,
     homeHeroLoadStarted: false,
+    siteFooter: null,
+    siteFooterLoadStarted: false,
     priceMin: 0,
     priceMax: 0,
     priceLimit: 0,
@@ -96,6 +100,97 @@
       ...state.homeHero,
       imageUrl: state.homeHero.imageUrl || fallback.imageUrl,
       imageAlt: state.homeHero.imageAlt || fallback.imageAlt
+    };
+  }
+
+  function fallbackSiteFooter() {
+    const footer = siteConfig.footer || {};
+    const contact = siteConfig.contact || {};
+    const logoText = String(footer.logoText || $(".brand")?.textContent.trim() || "APOTHEKE");
+    return {
+      type: "footer",
+      logoText,
+      description: String(footer.description || ""),
+      phone: String(footer.phone || contact.phone || "+852 0000 0000"),
+      email: String(footer.email || contact.email || ""),
+      address: String(footer.address || contact.address || "璜嬪湪閫欒！濉搴楅嫪鍦板潃"),
+      copyright: String(footer.copyright || `© ${new Date().getFullYear()} ${logoText}. All rights reserved.`),
+      instagramUrl: String(footer.instagramUrl || ""),
+      facebookUrl: String(footer.facebookUrl || ""),
+      isActive: footer.isActive !== false
+    };
+  }
+
+  function normalizeRemoteSiteFooter(data) {
+    if (!data || data.type !== "footer" || typeof data.isActive !== "boolean") return null;
+    const stringFields = ["logoText", "description", "phone", "email", "address", "copyright", "instagramUrl", "facebookUrl"];
+    if (!stringFields.every((field) => typeof data[field] === "string")) return null;
+    return {
+      type: "footer",
+      logoText: data.logoText,
+      description: data.description,
+      phone: data.phone,
+      email: data.email,
+      address: data.address,
+      copyright: data.copyright,
+      instagramUrl: data.instagramUrl,
+      facebookUrl: data.facebookUrl,
+      isActive: data.isActive
+    };
+  }
+
+  function currentSiteFooter() {
+    const fallback = fallbackSiteFooter();
+    if (!state.siteFooter) return fallback;
+    return {
+      ...fallback,
+      ...state.siteFooter,
+      logoText: state.siteFooter.logoText || fallback.logoText,
+      copyright: state.siteFooter.copyright || fallback.copyright
+    };
+  }
+
+  function fallbackContactContent() {
+    const contact = siteConfig.contact || {};
+    return {
+      type: "contact",
+      title: String(contact.title || "聯絡我們"),
+      subtitle: String(contact.subtitle || ""),
+      address: String(contact.address || "請在這裡填寫店鋪地址"),
+      phone: String(contact.phone || "+852 0000 0000"),
+      email: String(contact.email || ""),
+      openingHours: String(contact.openingHours || "星期一至日 11:00 - 20:00"),
+      googleMapEmbedUrl: String(contact.googleMapEmbedUrl || ""),
+      other: String(contact.other || "請在這裡填寫其他聯絡資料。"),
+      isActive: contact.isActive !== false
+    };
+  }
+
+  function normalizeRemoteContactContent(data) {
+    if (!data || data.type !== "contact" || typeof data.isActive !== "boolean") return null;
+    const stringFields = ["title", "subtitle", "address", "phone", "email", "openingHours", "googleMapEmbedUrl", "other"];
+    if (!stringFields.every((field) => typeof data[field] === "string")) return null;
+    return {
+      type: "contact",
+      title: data.title,
+      subtitle: data.subtitle,
+      address: data.address,
+      phone: data.phone,
+      email: data.email,
+      openingHours: data.openingHours,
+      googleMapEmbedUrl: data.googleMapEmbedUrl,
+      other: data.other,
+      isActive: data.isActive
+    };
+  }
+
+  function currentContactContent() {
+    const fallback = fallbackContactContent();
+    if (!state.contactContent) return fallback;
+    return {
+      ...fallback,
+      ...state.contactContent,
+      title: state.contactContent.title || fallback.title
     };
   }
 
@@ -1031,7 +1126,7 @@
     `;
   }
 
-  function renderContactPage() {
+  function renderContactPageLegacy() {
     const container = $("[data-contact-page]");
     if (!container) return;
     const contact = siteConfig.contact || {};
@@ -1067,6 +1162,79 @@
         </div>
       </section>
     `;
+  }
+
+  function renderContactPage() {
+    const container = $("[data-contact-page]");
+    if (!container) return;
+    const contact = currentContactContent();
+    document.title = `${contact.title || "Contact"} - APOTHEKE`;
+    const mapUrl = String(contact.googleMapEmbedUrl || "").trim();
+    const phone = String(contact.phone || "").trim();
+    const phoneHref = phone.replace(/[^+\d]/g, "");
+    const email = String(contact.email || "").trim();
+
+    if (!contact.isActive) {
+      container.innerHTML = `
+        <section class="info-page contact-page">
+          <h1>${escapeHtml(contact.title || "Contact")}</h1>
+          ${contact.subtitle ? `<p class="info-intro">${textToHtml(contact.subtitle)}</p>` : ""}
+        </section>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <section class="info-page contact-page">
+        <h1>${escapeHtml(contact.title || "Contact")}</h1>
+        ${contact.subtitle ? `<p class="info-intro">${textToHtml(contact.subtitle)}</p>` : ""}
+        <div class="contact-layout">
+          <div class="contact-details">
+            <article>
+              <h2>Address</h2>
+              <p>${textToHtml(contact.address)}</p>
+            </article>
+            <article>
+              <h2>Opening Hours</h2>
+              <p>${textToHtml(contact.openingHours)}</p>
+            </article>
+            <article>
+              <h2>Phone</h2>
+              <p>${phoneHref ? `<a href="tel:${escapeHtml(phoneHref)}">${escapeHtml(phone)}</a>` : escapeHtml(phone)}</p>
+            </article>
+            ${email ? `
+              <article>
+                <h2>Email</h2>
+                <p><a href="mailto:${escapeHtml(email)}">${escapeHtml(email)}</a></p>
+              </article>
+            ` : ""}
+            <article>
+              <h2>Other</h2>
+              <p>${textToHtml(contact.other)}</p>
+            </article>
+          </div>
+          <div class="map-panel">
+            ${mapUrl
+              ? `<iframe src="${escapeHtml(mapUrl)}" loading="lazy" allowfullscreen referrerpolicy="no-referrer-when-downgrade" title="Google Map"></iframe>`
+              : `<div class="map-placeholder">Google Map has not been configured.</div>`}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  async function loadContactContent() {
+    if (state.contactContentLoadStarted || !document.querySelector("[data-contact-page]")) return;
+    state.contactContentLoadStarted = true;
+    try {
+      const firebase = await getFirebaseService();
+      const content = normalizeRemoteContactContent(await firebase.getSiteContent("contact"));
+      if (!content) return;
+      state.contactContent = content;
+      renderContactPage();
+    } catch (error) {
+      console.warn("Contact content load failed; using site-config fallback.", error);
+    }
   }
 
   function renderPolicyPage() {
@@ -1132,12 +1300,19 @@
     }
   }
 
-  function renderSiteFooter() {
-    if ($("[data-site-footer]") || !$(".site-header")) return;
+  function renderSiteFooterLegacy() {
+    if (!$(".site-header")) return;
 
-    const contact = siteConfig.contact || {};
-    const logoText = $(".brand")?.textContent.trim() || "APOTHEKE";
-    const phone = String(contact.phone || "+852 0000 0000").trim();
+    const footerData = currentSiteFooter();
+    const existingFooter = $("[data-site-footer]");
+    if (!footerData.isActive) {
+      existingFooter?.remove();
+      return;
+    }
+
+    const logoText = String(footerData.logoText || "APOTHEKE").trim();
+    const description = String(footerData.description || "").trim();
+    const phone = String(footerData.phone || "").trim();
     const phoneHref = phone.replace(/[^+\d]/g, "");
     const address = contact.address || "請在這裡填寫店鋪地址";
     const footer = document.createElement("footer");
@@ -1162,6 +1337,76 @@
     const main = $("main");
     if (main) main.insertAdjacentElement("afterend", footer);
     else document.body.appendChild(footer);
+  }
+
+  function renderSiteFooter() {
+    if (!$(".site-header")) return;
+
+    const footerData = currentSiteFooter();
+    const existingFooter = $("[data-site-footer]");
+    if (!footerData.isActive) {
+      existingFooter?.remove();
+      return;
+    }
+
+    const logoText = String(footerData.logoText || "APOTHEKE").trim();
+    const description = String(footerData.description || "").trim();
+    const phone = String(footerData.phone || "").trim();
+    const phoneHref = phone.replace(/[^+\d]/g, "");
+    const email = String(footerData.email || "").trim();
+    const emailHref = email ? `mailto:${email}` : "";
+    const address = String(footerData.address || "").trim();
+    const copyright = String(footerData.copyright || "").trim();
+    const instagramUrl = resolveLinkUrl(footerData.instagramUrl);
+    const facebookUrl = resolveLinkUrl(footerData.facebookUrl);
+    const socialLinks = [
+      instagramUrl ? `<a class="site-footer__social-link" href="${escapeHtml(instagramUrl)}" target="_blank" rel="noopener noreferrer">Instagram</a>` : "",
+      facebookUrl ? `<a class="site-footer__social-link" href="${escapeHtml(facebookUrl)}" target="_blank" rel="noopener noreferrer">Facebook</a>` : ""
+    ].filter(Boolean).join("");
+    const footer = existingFooter || document.createElement("footer");
+    footer.className = "site-footer";
+    footer.dataset.siteFooter = "";
+    footer.innerHTML = `
+      <div class="site-footer__inner">
+        <div class="site-footer__brand-group">
+          <a class="site-footer__brand" href="${homeUrl()}" aria-label="${escapeHtml(logoText)} home">${escapeHtml(logoText)}</a>
+          ${description ? `<p class="site-footer__description">${textToHtml(description)}</p>` : ""}
+          ${socialLinks ? `<div class="site-footer__social">${socialLinks}</div>` : ""}
+        </div>
+        <div>
+          <span class="site-footer__label">Phone</span>
+          ${phoneHref
+            ? `<a class="site-footer__value" href="tel:${escapeHtml(phoneHref)}">${escapeHtml(phone)}</a>`
+            : `<span class="site-footer__value">${escapeHtml(phone)}</span>`}
+          ${email ? `<a class="site-footer__value site-footer__email" href="${escapeHtml(emailHref)}">${escapeHtml(email)}</a>` : ""}
+        </div>
+        <div>
+          <span class="site-footer__label">Address</span>
+          <address>${textToHtml(address)}</address>
+          ${copyright ? `<small class="site-footer__copyright">${escapeHtml(copyright)}</small>` : ""}
+        </div>
+      </div>
+    `;
+
+    if (!existingFooter) {
+      const main = $("main");
+      if (main) main.insertAdjacentElement("afterend", footer);
+      else document.body.appendChild(footer);
+    }
+  }
+
+  async function loadSiteFooterContent() {
+    if (state.siteFooterLoadStarted || !$("[data-site-footer]")) return;
+    state.siteFooterLoadStarted = true;
+    try {
+      const firebase = await getFirebaseService();
+      const content = normalizeRemoteSiteFooter(await firebase.getSiteContent("footer"));
+      if (!content) return;
+      state.siteFooter = content;
+      renderSiteFooter();
+    } catch (error) {
+      console.warn("Footer content load failed; using site-config fallback.", error);
+    }
   }
 
   function getNumericPrice(value) {
@@ -1725,8 +1970,10 @@
   renderProductDetail();
   renderAboutPage();
   renderContactPage();
+  loadContactContent();
   renderPolicyPage();
   renderSiteFooter();
+  loadSiteFooterContent();
   window.localStorage.removeItem(LEGACY_USERS_KEY);
   window.localStorage.removeItem("onlineShopCurrentUser");
   updateAuthNav();

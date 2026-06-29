@@ -27,13 +27,31 @@
   let homeHeroLoading = false;
   let homeHeroSaving = false;
   let homeHeroUploading = false;
+  let footerDraft = null;
+  let footerLoading = false;
+  let footerSaving = false;
+  let contactDraft = null;
+  let contactLoading = false;
+  let contactSaving = false;
   let activeHomeHeroFieldId = null;
+  let activeFooterFieldId = null;
+  let activeContactFieldId = null;
   let suppressHomeHeroFocusActivation = false;
+  let suppressFooterFocusActivation = false;
+  let suppressContactFocusActivation = false;
 
   const HOME_HERO_FIELD_TO_PREVIEW_FIELD = {
     "homeHero.imageAlt": "homeHero.imageUrl",
     "homeHero.buttonHref": "homeHero.buttonText",
     "homeHero.isActive": "homeHero"
+  };
+
+  const FOOTER_FIELD_TO_PREVIEW_FIELD = {
+    "footer.isActive": "footer"
+  };
+
+  const CONTACT_FIELD_TO_PREVIEW_FIELD = {
+    "contact.isActive": "contact"
   };
 
   window.merchantUids = merchantUids;
@@ -45,6 +63,10 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
+  }
+
+  function textToHtml(value) {
+    return escapeHtml(value).replace(/\r?\n/g, "<br>");
   }
 
   function uniqueStrings(values) {
@@ -146,6 +168,126 @@
     }
   }
 
+  function previewFieldForFooterField(fieldId) {
+    return FOOTER_FIELD_TO_PREVIEW_FIELD[fieldId] || fieldId;
+  }
+
+  function findFooterPreviewTarget(fieldId) {
+    const previewRoot = findDataAttribute(document, "data-preview-id", "footer");
+    if (!previewRoot) return null;
+    const previewFieldId = previewFieldForFooterField(fieldId);
+    if (previewFieldId === "footer") return previewRoot;
+    return findDataAttribute(previewRoot, "data-preview-field", previewFieldId);
+  }
+
+  function findFooterEditorTarget(fieldId) {
+    const form = document.querySelector("[data-footer-form]");
+    if (!form) return null;
+    return findDataAttribute(form, "data-editor-field", fieldId);
+  }
+
+  function clearFooterVisualSelection() {
+    document
+      .querySelectorAll('[data-preview-id="footer"].is-visual-edit-active, [data-preview-id="footer"] .is-visual-edit-active, [data-footer-form] .is-visual-edit-active')
+      .forEach((node) => node.classList.remove("is-visual-edit-active"));
+  }
+
+  function applyFooterVisualSelection() {
+    clearFooterVisualSelection();
+    if (!activeFooterFieldId) return;
+    const previewTarget = findFooterPreviewTarget(activeFooterFieldId);
+    const editorTarget = findFooterEditorTarget(activeFooterFieldId);
+    if (previewTarget) previewTarget.classList.add("is-visual-edit-active");
+    if (editorTarget) editorTarget.classList.add("is-visual-edit-active");
+  }
+
+  function activateFooterField(fieldId, source) {
+    if (!fieldId) return;
+    activeFooterFieldId = fieldId;
+    applyFooterVisualSelection();
+
+    const previewTarget = findFooterPreviewTarget(fieldId);
+    const editorTarget = findFooterEditorTarget(fieldId);
+
+    if (source === "editor" && previewTarget) {
+      previewTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    }
+
+    if (source === "preview" && editorTarget) {
+      editorTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      const focusTarget = editorTarget.matches("input, textarea, button")
+        ? editorTarget
+        : editorTarget.querySelector("input, textarea, button");
+      if (focusTarget) {
+        suppressFooterFocusActivation = true;
+        focusTarget.focus({ preventScroll: true });
+        window.setTimeout(() => {
+          suppressFooterFocusActivation = false;
+        }, 0);
+      }
+    }
+  }
+
+  function previewFieldForContactField(fieldId) {
+    return CONTACT_FIELD_TO_PREVIEW_FIELD[fieldId] || fieldId;
+  }
+
+  function findContactPreviewTarget(fieldId) {
+    const previewRoot = findDataAttribute(document, "data-preview-id", "contact");
+    if (!previewRoot) return null;
+    const previewFieldId = previewFieldForContactField(fieldId);
+    if (previewFieldId === "contact") return previewRoot;
+    return findDataAttribute(previewRoot, "data-preview-field", previewFieldId);
+  }
+
+  function findContactEditorTarget(fieldId) {
+    const form = document.querySelector("[data-contact-form]");
+    if (!form) return null;
+    return findDataAttribute(form, "data-editor-field", fieldId);
+  }
+
+  function clearContactVisualSelection() {
+    document
+      .querySelectorAll('[data-preview-id="contact"].is-visual-edit-active, [data-preview-id="contact"] .is-visual-edit-active, [data-contact-form] .is-visual-edit-active')
+      .forEach((node) => node.classList.remove("is-visual-edit-active"));
+  }
+
+  function applyContactVisualSelection() {
+    clearContactVisualSelection();
+    if (!activeContactFieldId) return;
+    const previewTarget = findContactPreviewTarget(activeContactFieldId);
+    const editorTarget = findContactEditorTarget(activeContactFieldId);
+    if (previewTarget) previewTarget.classList.add("is-visual-edit-active");
+    if (editorTarget) editorTarget.classList.add("is-visual-edit-active");
+  }
+
+  function activateContactField(fieldId, source) {
+    if (!fieldId) return;
+    activeContactFieldId = fieldId;
+    applyContactVisualSelection();
+
+    const previewTarget = findContactPreviewTarget(fieldId);
+    const editorTarget = findContactEditorTarget(fieldId);
+
+    if (source === "editor" && previewTarget) {
+      previewTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    }
+
+    if (source === "preview" && editorTarget) {
+      editorTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      const focusTarget = editorTarget.matches("input, textarea, button")
+        ? editorTarget
+        : editorTarget.querySelector("input, textarea, button");
+      if (focusTarget) {
+        suppressContactFocusActivation = true;
+        focusTarget.focus({ preventScroll: true });
+        window.setTimeout(() => {
+          suppressContactFocusActivation = false;
+        }, 0);
+      }
+    }
+  }
+
   function fallbackHomeHero() {
     const home = window.ONLINE_SHOP_SITE_CONFIG?.home || {};
     return {
@@ -173,6 +315,75 @@
       imageAlt: String(data.imageAlt ?? fallback.imageAlt),
       buttonText: String(data.buttonText ?? fallback.buttonText),
       buttonHref: String(data.buttonHref ?? fallback.buttonHref),
+      isActive: typeof data.isActive === "boolean" ? data.isActive : fallback.isActive
+    };
+  }
+
+  function fallbackFooterContent() {
+    const config = window.ONLINE_SHOP_SITE_CONFIG || {};
+    const footer = config.footer || {};
+    const contact = config.contact || {};
+    const logoText = String(footer.logoText || document.querySelector(".brand")?.textContent.trim() || "APOTHEKE");
+    return {
+      type: "footer",
+      logoText,
+      description: String(footer.description || ""),
+      phone: String(footer.phone || contact.phone || "+852 0000 0000"),
+      email: String(footer.email || contact.email || ""),
+      address: String(footer.address || contact.address || ""),
+      copyright: String(footer.copyright || `© ${new Date().getFullYear()} ${logoText}. All rights reserved.`),
+      instagramUrl: String(footer.instagramUrl || ""),
+      facebookUrl: String(footer.facebookUrl || ""),
+      isActive: footer.isActive !== false
+    };
+  }
+
+  function normalizeFooterContent(data) {
+    const fallback = fallbackFooterContent();
+    if (!data || data.type !== "footer") return fallback;
+    return {
+      type: "footer",
+      logoText: String(data.logoText ?? fallback.logoText),
+      description: String(data.description ?? fallback.description),
+      phone: String(data.phone ?? fallback.phone),
+      email: String(data.email ?? fallback.email),
+      address: String(data.address ?? fallback.address),
+      copyright: String(data.copyright ?? fallback.copyright),
+      instagramUrl: String(data.instagramUrl ?? fallback.instagramUrl),
+      facebookUrl: String(data.facebookUrl ?? fallback.facebookUrl),
+      isActive: typeof data.isActive === "boolean" ? data.isActive : fallback.isActive
+    };
+  }
+
+  function fallbackContactContent() {
+    const contact = window.ONLINE_SHOP_SITE_CONFIG?.contact || {};
+    return {
+      type: "contact",
+      title: String(contact.title || "聯絡我們"),
+      subtitle: String(contact.subtitle || ""),
+      address: String(contact.address || "請在這裡填寫店鋪地址"),
+      phone: String(contact.phone || "+852 0000 0000"),
+      email: String(contact.email || ""),
+      openingHours: String(contact.openingHours || "星期一至日 11:00 - 20:00"),
+      googleMapEmbedUrl: String(contact.googleMapEmbedUrl || ""),
+      other: String(contact.other || "請在這裡填寫其他聯絡資料。"),
+      isActive: contact.isActive !== false
+    };
+  }
+
+  function normalizeContactContent(data) {
+    const fallback = fallbackContactContent();
+    if (!data || data.type !== "contact") return fallback;
+    return {
+      type: "contact",
+      title: String(data.title ?? fallback.title),
+      subtitle: String(data.subtitle ?? fallback.subtitle),
+      address: String(data.address ?? fallback.address),
+      phone: String(data.phone ?? fallback.phone),
+      email: String(data.email ?? fallback.email),
+      openingHours: String(data.openingHours ?? fallback.openingHours),
+      googleMapEmbedUrl: String(data.googleMapEmbedUrl ?? fallback.googleMapEmbedUrl),
+      other: String(data.other ?? fallback.other),
       isActive: typeof data.isActive === "boolean" ? data.isActive : fallback.isActive
     };
   }
@@ -324,8 +535,9 @@
       </section>`;
   }
 
-  function setSiteContentMessage(message, type = "info") {
-    const node = document.querySelector("[data-site-content-message]");
+  function setSiteContentMessage(message, type = "info", contentId = "homeHero") {
+    const node = document.querySelector(`[data-site-content-message="${contentId}"]`)
+      || document.querySelector("[data-site-content-message]");
     if (!node) return;
     node.textContent = message;
     node.dataset.type = type;
@@ -347,6 +559,44 @@
     return homeHeroDraft;
   }
 
+  function syncFooterDraftFromForm(form = document.querySelector("[data-footer-form]")) {
+    if (!form) return footerDraft || fallbackFooterContent();
+    const data = new FormData(form);
+    footerDraft = {
+      ...(footerDraft || fallbackFooterContent()),
+      type: "footer",
+      logoText: String(data.get("logoText") || "").trim(),
+      description: String(data.get("description") || "").trim(),
+      phone: String(data.get("phone") || "").trim(),
+      email: String(data.get("email") || "").trim(),
+      address: String(data.get("address") || "").trim(),
+      copyright: String(data.get("copyright") || "").trim(),
+      instagramUrl: String(data.get("instagramUrl") || "").trim(),
+      facebookUrl: String(data.get("facebookUrl") || "").trim(),
+      isActive: data.get("isActive") === "on"
+    };
+    return footerDraft;
+  }
+
+  function syncContactDraftFromForm(form = document.querySelector("[data-contact-form]")) {
+    if (!form) return contactDraft || fallbackContactContent();
+    const data = new FormData(form);
+    contactDraft = {
+      ...(contactDraft || fallbackContactContent()),
+      type: "contact",
+      title: String(data.get("title") || "").trim(),
+      subtitle: String(data.get("subtitle") || "").trim(),
+      address: String(data.get("address") || "").trim(),
+      phone: String(data.get("phone") || "").trim(),
+      email: String(data.get("email") || "").trim(),
+      openingHours: String(data.get("openingHours") || "").trim(),
+      googleMapEmbedUrl: String(data.get("googleMapEmbedUrl") || "").trim(),
+      other: String(data.get("other") || "").trim(),
+      isActive: data.get("isActive") === "on"
+    };
+    return contactDraft;
+  }
+
   function renderSiteContentPanel() {
     const panel = document.querySelector("[data-site-content-panel]");
     if (!panel) return;
@@ -358,16 +608,30 @@
     const controlsDisabled = !canEdit || homeHeroLoading || homeHeroSaving || homeHeroUploading;
     const saveText = homeHeroSaving ? "Saving..." : "Save Home Hero";
     const uploadText = homeHeroUploading ? "Uploading image..." : "Hero image";
+    const footer = footerDraft || fallbackFooterContent();
+    const footerControlsDisabled = !canEdit || footerLoading || footerSaving;
+    const footerSaveText = footerSaving ? "Saving..." : "Save Footer";
+    const footerPhoneHref = String(footer.phone || "").replace(/[^+\d]/g, "");
+    const footerEmail = String(footer.email || "").trim();
+    const footerInstagramUrl = resolvePreviewUrl(footer.instagramUrl);
+    const footerFacebookUrl = resolvePreviewUrl(footer.facebookUrl);
+    const contact = contactDraft || fallbackContactContent();
+    const contactControlsDisabled = !canEdit || contactLoading || contactSaving;
+    const contactSaveText = contactSaving ? "Saving..." : "Save Contact";
+    const contactPhoneHref = String(contact.phone || "").replace(/[^+\d]/g, "");
+    const contactEmail = String(contact.email || "").trim();
+    const contactMapUrl = resolvePreviewUrl(contact.googleMapEmbedUrl);
 
     panel.innerHTML = `
       <div class="merchant-page merchant-site-content">
         <div class="merchant-page__heading">
           <div>
             <p class="merchant-eyebrow">\u9801\u9762\u5167\u5bb9</p>
-            <h1>Home Hero</h1>
+            <h1>Website Content</h1>
           </div>
           <a class="merchant-secondary-button merchant-site-content__preview" href="${rootPrefix()}index.html" target="_blank" rel="noopener noreferrer">Preview</a>
         </div>
+        <h2 class="merchant-site-content__section-title">Home Hero</h2>
         <section class="merchant-products-panel merchant-site-content__panel">
           <div class="merchant-site-content__preview-frame" data-site-content-preview data-preview-id="homeHero">
             ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(hero.imageAlt)}" data-preview-field="homeHero.imageUrl">` : `<span data-preview-field="homeHero.imageUrl">No image</span>`}
@@ -409,9 +673,151 @@
             <div class="merchant-site-content__meta">
               <span>${escapeHtml(hero.imagePath || "site-content/home/")}</span>
             </div>
-            <p class="merchant-message" data-site-content-message aria-live="polite"></p>
+            <p class="merchant-message" data-site-content-message="homeHero" aria-live="polite"></p>
             <div class="merchant-modal__actions">
               <button class="merchant-primary-button" type="submit" data-save-home-hero ${controlsDisabled ? "disabled" : ""}>${saveText}</button>
+            </div>
+            ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
+          </form>
+        </section>
+        <h2 class="merchant-site-content__section-title">Footer</h2>
+        <section class="merchant-products-panel merchant-site-content__panel">
+          <div class="merchant-site-content__preview-frame merchant-site-content__preview-frame--footer" data-site-content-preview data-preview-id="footer">
+            <div class="merchant-site-content__footer-preview">
+              <strong data-preview-field="footer.logoText">${escapeHtml(footer.logoText)}</strong>
+              ${footer.description ? `<p data-preview-field="footer.description">${textToHtml(footer.description)}</p>` : ""}
+              <div class="merchant-site-content__footer-contact">
+                ${footer.phone ? `<a href="${footerPhoneHref ? `tel:${escapeHtml(footerPhoneHref)}` : "#"}" data-preview-field="footer.phone">${escapeHtml(footer.phone)}</a>` : `<span data-preview-field="footer.phone">Phone</span>`}
+                ${footerEmail ? `<a href="mailto:${escapeHtml(footerEmail)}" data-preview-field="footer.email">${escapeHtml(footerEmail)}</a>` : `<span data-preview-field="footer.email">Email</span>`}
+                ${footer.address ? `<address data-preview-field="footer.address">${textToHtml(footer.address)}</address>` : `<address data-preview-field="footer.address">Address</address>`}
+              </div>
+              <div class="merchant-site-content__footer-social">
+                ${footer.instagramUrl ? `<a href="${escapeHtml(footerInstagramUrl || "#")}" data-preview-field="footer.instagramUrl">Instagram</a>` : ""}
+                ${footer.facebookUrl ? `<a href="${escapeHtml(footerFacebookUrl || "#")}" data-preview-field="footer.facebookUrl">Facebook</a>` : ""}
+              </div>
+              <small data-preview-field="footer.copyright">${escapeHtml(footer.copyright)}</small>
+              <span class="merchant-site-content__status" data-preview-field="footer.isActive">${footer.isActive ? "Visible" : "Hidden"}</span>
+            </div>
+          </div>
+          <form class="merchant-form merchant-site-content__form" data-footer-form>
+            <fieldset ${footerControlsDisabled ? "disabled" : ""}>
+              <div class="merchant-form__row">
+                <label data-editor-field="footer.logoText">Logo text
+                  <input name="logoText" type="text" maxlength="80" value="${escapeHtml(footer.logoText)}">
+                </label>
+                <label data-editor-field="footer.phone">Phone
+                  <input name="phone" type="text" maxlength="60" value="${escapeHtml(footer.phone)}">
+                </label>
+              </div>
+              <label data-editor-field="footer.description">Description
+                <textarea name="description" rows="3" maxlength="280">${escapeHtml(footer.description)}</textarea>
+              </label>
+              <div class="merchant-form__row">
+                <label data-editor-field="footer.email">Email
+                  <input name="email" type="email" maxlength="120" value="${escapeHtml(footer.email)}">
+                </label>
+                <label data-editor-field="footer.copyright">Copyright
+                  <input name="copyright" type="text" maxlength="160" value="${escapeHtml(footer.copyright)}">
+                </label>
+              </div>
+              <label data-editor-field="footer.address">Address
+                <textarea name="address" rows="3" maxlength="280">${escapeHtml(footer.address)}</textarea>
+              </label>
+              <div class="merchant-form__row">
+                <label data-editor-field="footer.instagramUrl">Instagram URL
+                  <input name="instagramUrl" type="text" maxlength="500" value="${escapeHtml(footer.instagramUrl)}">
+                </label>
+                <label data-editor-field="footer.facebookUrl">Facebook URL
+                  <input name="facebookUrl" type="text" maxlength="500" value="${escapeHtml(footer.facebookUrl)}">
+                </label>
+              </div>
+              <label class="merchant-checkbox" data-editor-field="footer.isActive">
+                <input name="isActive" type="checkbox" ${footer.isActive ? "checked" : ""}>
+                <span>Show Footer</span>
+              </label>
+            </fieldset>
+            <p class="merchant-message" data-site-content-message="footer" aria-live="polite"></p>
+            <div class="merchant-modal__actions">
+              <button class="merchant-primary-button" type="submit" data-save-footer ${footerControlsDisabled ? "disabled" : ""}>${footerSaveText}</button>
+            </div>
+            ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
+          </form>
+        </section>
+        <h2 class="merchant-site-content__section-title">Contact</h2>
+        <section class="merchant-products-panel merchant-site-content__panel">
+          <div class="merchant-site-content__preview-frame merchant-site-content__preview-frame--contact" data-site-content-preview data-preview-id="contact">
+            <div class="merchant-site-content__contact-preview">
+              <div class="merchant-site-content__contact-heading">
+                <strong data-preview-field="contact.title">${escapeHtml(contact.title)}</strong>
+                ${contact.subtitle ? `<p data-preview-field="contact.subtitle">${textToHtml(contact.subtitle)}</p>` : `<p data-preview-field="contact.subtitle">Subtitle</p>`}
+              </div>
+              <div class="merchant-site-content__contact-grid">
+                <article data-preview-field="contact.address">
+                  <span>Address</span>
+                  <p>${textToHtml(contact.address)}</p>
+                </article>
+                <article data-preview-field="contact.openingHours">
+                  <span>Opening Hours</span>
+                  <p>${textToHtml(contact.openingHours)}</p>
+                </article>
+                <article data-preview-field="contact.phone">
+                  <span>Phone</span>
+                  ${contactPhoneHref ? `<a href="tel:${escapeHtml(contactPhoneHref)}">${escapeHtml(contact.phone)}</a>` : `<p>${escapeHtml(contact.phone)}</p>`}
+                </article>
+                <article data-preview-field="contact.email">
+                  <span>Email</span>
+                  ${contactEmail ? `<a href="mailto:${escapeHtml(contactEmail)}">${escapeHtml(contactEmail)}</a>` : `<p>Email</p>`}
+                </article>
+                <article data-preview-field="contact.other">
+                  <span>Other</span>
+                  <p>${textToHtml(contact.other)}</p>
+                </article>
+                <article data-preview-field="contact.googleMapEmbedUrl">
+                  <span>Map</span>
+                  ${contactMapUrl ? `<a href="${escapeHtml(contactMapUrl)}">Google Map embed configured</a>` : `<p>Google Map has not been configured.</p>`}
+                </article>
+              </div>
+              <span class="merchant-site-content__status" data-preview-field="contact.isActive">${contact.isActive ? "Visible" : "Hidden"}</span>
+            </div>
+          </div>
+          <form class="merchant-form merchant-site-content__form" data-contact-form>
+            <fieldset ${contactControlsDisabled ? "disabled" : ""}>
+              <div class="merchant-form__row">
+                <label data-editor-field="contact.title">Title
+                  <input name="title" type="text" maxlength="120" value="${escapeHtml(contact.title)}">
+                </label>
+                <label data-editor-field="contact.phone">Phone
+                  <input name="phone" type="text" maxlength="60" value="${escapeHtml(contact.phone)}">
+                </label>
+              </div>
+              <label data-editor-field="contact.subtitle">Subtitle
+                <textarea name="subtitle" rows="2" maxlength="240">${escapeHtml(contact.subtitle)}</textarea>
+              </label>
+              <div class="merchant-form__row">
+                <label data-editor-field="contact.email">Email
+                  <input name="email" type="email" maxlength="120" value="${escapeHtml(contact.email)}">
+                </label>
+                <label data-editor-field="contact.openingHours">Opening hours
+                  <input name="openingHours" type="text" maxlength="160" value="${escapeHtml(contact.openingHours)}">
+                </label>
+              </div>
+              <label data-editor-field="contact.address">Address
+                <textarea name="address" rows="3" maxlength="280">${escapeHtml(contact.address)}</textarea>
+              </label>
+              <label data-editor-field="contact.googleMapEmbedUrl">Google Map embed URL
+                <input name="googleMapEmbedUrl" type="text" maxlength="1000" value="${escapeHtml(contact.googleMapEmbedUrl)}">
+              </label>
+              <label data-editor-field="contact.other">Other
+                <textarea name="other" rows="3" maxlength="360">${escapeHtml(contact.other)}</textarea>
+              </label>
+              <label class="merchant-checkbox" data-editor-field="contact.isActive">
+                <input name="isActive" type="checkbox" ${contact.isActive ? "checked" : ""}>
+                <span>Show Contact</span>
+              </label>
+            </fieldset>
+            <p class="merchant-message" data-site-content-message="contact" aria-live="polite"></p>
+            <div class="merchant-modal__actions">
+              <button class="merchant-primary-button" type="submit" data-save-contact ${contactControlsDisabled ? "disabled" : ""}>${contactSaveText}</button>
             </div>
             ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
           </form>
@@ -419,8 +825,12 @@
       </div>
     `;
     applyHomeHeroVisualSelection();
+    applyFooterVisualSelection();
+    applyContactVisualSelection();
 
     if (homeHeroLoading) setSiteContentMessage("Loading Home Hero...", "info");
+    if (footerLoading) setSiteContentMessage("Loading Footer...", "info", "footer");
+    if (contactLoading) setSiteContentMessage("Loading Contact...", "info", "contact");
   }
 
   async function loadMerchantRole(user) {
@@ -496,6 +906,46 @@
       homeHeroDraft = homeHeroDraft || fallbackHomeHero();
       renderSiteContentPanel();
       setSiteContentMessage(merchantErrorMessage(error, "Could not load Home Hero. Using fallback content."), "error");
+    }
+  }
+
+  async function loadFooterContent() {
+    if (!currentMerchant || !document.querySelector("[data-site-content-panel]")) return;
+    footerLoading = true;
+    footerDraft = footerDraft || fallbackFooterContent();
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      const remoteFooter = await firebase.getSiteContent("footer");
+      footerDraft = normalizeFooterContent(remoteFooter);
+      footerLoading = false;
+      renderSiteContentPanel();
+      setSiteContentMessage(remoteFooter ? "Footer loaded." : "Using fallback Footer.", "success", "footer");
+    } catch (error) {
+      footerLoading = false;
+      footerDraft = footerDraft || fallbackFooterContent();
+      renderSiteContentPanel();
+      setSiteContentMessage(merchantErrorMessage(error, "Could not load Footer. Using fallback content."), "error", "footer");
+    }
+  }
+
+  async function loadContactContent() {
+    if (!currentMerchant || !document.querySelector("[data-site-content-panel]")) return;
+    contactLoading = true;
+    contactDraft = contactDraft || fallbackContactContent();
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      const remoteContact = await firebase.getSiteContent("contact");
+      contactDraft = normalizeContactContent(remoteContact);
+      contactLoading = false;
+      renderSiteContentPanel();
+      setSiteContentMessage(remoteContact ? "Contact loaded." : "Using fallback Contact.", "success", "contact");
+    } catch (error) {
+      contactLoading = false;
+      contactDraft = contactDraft || fallbackContactContent();
+      renderSiteContentPanel();
+      setSiteContentMessage(merchantErrorMessage(error, "Could not load Contact. Using fallback content."), "error", "contact");
     }
   }
 
@@ -588,6 +1038,98 @@
     }
   }
 
+  async function saveFooterForm(form) {
+    if (!currentMerchant) return;
+    if (!(await ensurePageContentPermission())) {
+      setSiteContentMessage("pagesWrite permission is not enabled for this account.", "error", "footer");
+      return;
+    }
+    const draft = syncFooterDraftFromForm(form);
+    const payload = {
+      type: "footer",
+      logoText: draft.logoText,
+      description: draft.description,
+      phone: draft.phone,
+      email: draft.email,
+      address: draft.address,
+      copyright: draft.copyright,
+      instagramUrl: draft.instagramUrl,
+      facebookUrl: draft.facebookUrl,
+      isActive: draft.isActive
+    };
+
+    footerSaving = true;
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      await firebase.saveSiteContent("footer", payload);
+      footerSaving = false;
+      footerDraft = normalizeFooterContent(payload);
+      renderSiteContentPanel();
+      setSiteContentMessage("Footer saved.", "success", "footer");
+      showMerchantToast("Footer saved");
+    } catch (error) {
+      footerSaving = false;
+      renderSiteContentPanel();
+      console.error({
+        action: "saveFooterForm",
+        code: error?.code,
+        message: error?.message,
+        payload
+      });
+      const message = error?.code === "permission-denied"
+        ? "Firestore rejected the Footer save. Please check deployed firestore.rules for siteContent/footer."
+        : "Could not save Footer.";
+      setSiteContentMessage(message, "error", "footer");
+    }
+  }
+
+  async function saveContactForm(form) {
+    if (!currentMerchant) return;
+    if (!(await ensurePageContentPermission())) {
+      setSiteContentMessage("pagesWrite permission is not enabled for this account.", "error", "contact");
+      return;
+    }
+    const draft = syncContactDraftFromForm(form);
+    const payload = {
+      type: "contact",
+      title: draft.title,
+      subtitle: draft.subtitle,
+      address: draft.address,
+      phone: draft.phone,
+      email: draft.email,
+      openingHours: draft.openingHours,
+      googleMapEmbedUrl: draft.googleMapEmbedUrl,
+      other: draft.other,
+      isActive: draft.isActive
+    };
+
+    contactSaving = true;
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      await firebase.saveSiteContent("contact", payload);
+      contactSaving = false;
+      contactDraft = normalizeContactContent(payload);
+      renderSiteContentPanel();
+      setSiteContentMessage("Contact saved.", "success", "contact");
+      showMerchantToast("Contact saved");
+    } catch (error) {
+      contactSaving = false;
+      renderSiteContentPanel();
+      console.error({
+        action: "saveContactForm",
+        code: error?.code,
+        message: error?.message,
+        payload
+      });
+      const message = error?.code === "permission-denied"
+        ? "Firestore rejected the Contact save. Please check deployed firestore.rules for siteContent/contact."
+        : "Could not save Contact.";
+      setSiteContentMessage(message, "error", "contact");
+    }
+  }
+
   function cleanupProductImages(urls) {
     Promise.allSettled(uniqueStrings(urls).map((url) => store.deleteProductImage(url)))
       .then((results) => {
@@ -638,6 +1180,8 @@
     ensureMerchantModals();
     renderSiteContentPanel();
     loadHomeHeroContent();
+    loadFooterContent();
+    loadContactContent();
     renderProductRows();
   }
   function ensureMerchantModals() {
@@ -1030,7 +1574,11 @@
       currentMerchant = null;
       resetMerchantRoleState();
       homeHeroDraft = null;
+      footerDraft = null;
+      contactDraft = null;
       activeHomeHeroFieldId = null;
+      activeFooterFieldId = null;
+      activeContactFieldId = null;
       closeMerchantModals();
       if (container) window.location.replace(storefrontLoginUrl());
       return;
@@ -1040,7 +1588,11 @@
       currentMerchant = null;
       resetMerchantRoleState();
       homeHeroDraft = null;
+      footerDraft = null;
+      contactDraft = null;
       activeHomeHeroFieldId = null;
+      activeFooterFieldId = null;
+      activeContactFieldId = null;
       closeMerchantModals();
       if (container) {
         renderGate("沒有權限", `帳號 ${escapeHtml(user.email || user.uid || "")} 沒有商戶後台權限。`, `<a class="merchant-secondary-button" href="${rootPrefix()}index.html">返回首頁</a>`);
@@ -1078,6 +1630,18 @@
       await saveHomeHeroForm(homeHeroForm);
       return;
     }
+    const footerForm = event.target.closest("[data-footer-form]");
+    if (footerForm && currentMerchant) {
+      event.preventDefault();
+      await saveFooterForm(footerForm);
+      return;
+    }
+    const contactForm = event.target.closest("[data-contact-form]");
+    if (contactForm && currentMerchant) {
+      event.preventDefault();
+      await saveContactForm(contactForm);
+      return;
+    }
 
     const form = event.target.closest("[data-merchant-editor-form]");
     if (!form || !currentMerchant) return;
@@ -1096,6 +1660,20 @@
     activateHomeHeroField(editorField.getAttribute("data-editor-field"), "editor");
   });
 
+  document.addEventListener("focusin", (event) => {
+    if (suppressFooterFocusActivation) return;
+    const editorField = event.target.closest("[data-footer-form] [data-editor-field]");
+    if (!editorField) return;
+    activateFooterField(editorField.getAttribute("data-editor-field"), "editor");
+  });
+
+  document.addEventListener("focusin", (event) => {
+    if (suppressContactFocusActivation) return;
+    const editorField = event.target.closest("[data-contact-form] [data-editor-field]");
+    if (!editorField) return;
+    activateContactField(editorField.getAttribute("data-editor-field"), "editor");
+  });
+
   document.addEventListener("click", async (event) => {
     if (event.target.closest("[data-merchant-dashboard-logout]")) return handleMerchantLogout();
     const previewField = event.target.closest('[data-preview-id="homeHero"] [data-preview-field]');
@@ -1107,6 +1685,28 @@
     const editorField = event.target.closest("[data-home-hero-form] [data-editor-field]");
     if (editorField) {
       activateHomeHeroField(editorField.getAttribute("data-editor-field"), "editor");
+      return;
+    }
+    const footerPreviewField = event.target.closest('[data-preview-id="footer"] [data-preview-field]');
+    if (footerPreviewField) {
+      if (event.target.closest("a, button")) event.preventDefault();
+      activateFooterField(footerPreviewField.getAttribute("data-preview-field"), "preview");
+      return;
+    }
+    const footerEditorField = event.target.closest("[data-footer-form] [data-editor-field]");
+    if (footerEditorField) {
+      activateFooterField(footerEditorField.getAttribute("data-editor-field"), "editor");
+      return;
+    }
+    const contactPreviewField = event.target.closest('[data-preview-id="contact"] [data-preview-field]');
+    if (contactPreviewField) {
+      if (event.target.closest("a, button")) event.preventDefault();
+      activateContactField(contactPreviewField.getAttribute("data-preview-field"), "preview");
+      return;
+    }
+    const contactEditorField = event.target.closest("[data-contact-form] [data-editor-field]");
+    if (contactEditorField) {
+      activateContactField(contactEditorField.getAttribute("data-editor-field"), "editor");
       return;
     }
 
