@@ -357,9 +357,9 @@
               <section class="merchant-subpanel ${usersSubsection === "list" ? "is-active" : ""}" data-users-subpanel="list">
               <div class="merchant-stat-grid">
                 <article class="merchant-stat-card"><span>\u7e3d\u7528\u6236\u6578</span><strong data-total-users>0</strong></article>
-                <article class="merchant-stat-card"><span>admin 數量</span><strong data-admin-users>0</strong></article>
-                <article class="merchant-stat-card"><span>staff 數量</span><strong data-staff-users>0</strong></article>
-                <article class="merchant-stat-card"><span>blocked 數量</span><strong data-blocked-users>0</strong></article>
+                <article class="merchant-stat-card"><span>管理員</span><strong data-admin-users>0</strong></article>
+                <article class="merchant-stat-card"><span>員工</span><strong data-staff-users>0</strong></article>
+                <article class="merchant-stat-card"><span>已封鎖</span><strong data-blocked-users>0</strong></article>
               </div>
               ${canManageUsers() ? `<div class="merchant-users-toolbar"><button class="merchant-primary-button" type="button" data-open-invite-modal>邀請用戶</button></div>` : ""}
               <p class="merchant-data-message" data-users-message>\u6b63\u5728\u8f09\u5165\u7528\u6236\u8cc7\u6599\u2026</p>
@@ -650,11 +650,11 @@
               <option value="blocked" ${user.status === "blocked" ? "selected" : ""}>已封鎖</option>
             </select>
           </label>
-          <label>聯絡電話<input name="phone" value="${escapeHtml(user.phone || "")}" ${canEditProfile ? "" : "disabled"}></label>
-          ${isCustomer ? `<label class="merchant-user-form-wide">送貨地址<textarea name="address" rows="3" ${canEditProfile ? "" : "disabled"}>${escapeHtml(user.address || "")}</textarea></label>` : ""}
-          <label>生日<input type="date" name="birthday" value="${escapeHtml(user.birthday || "")}" ${canEditProfile ? "" : "disabled"}></label>
+          <label>聯絡電話<input value="${escapeHtml(user.phone || "")}" readonly disabled></label>
+          ${isCustomer ? `<label class="merchant-user-form-wide">送貨地址<textarea rows="3" readonly disabled>${escapeHtml(user.address || "")}</textarea></label>` : ""}
+          <label>生日<input type="date" value="${escapeHtml(user.birthday || "")}" readonly disabled></label>
           <label>性別
-            <select name="gender" ${canEditProfile ? "" : "disabled"}>
+            <select disabled>
               <option value="" ${!user.gender ? "selected" : ""}>未設定</option>
               <option value="female" ${user.gender === "female" ? "selected" : ""}>女</option>
               <option value="male" ${user.gender === "male" ? "selected" : ""}>男</option>
@@ -662,7 +662,6 @@
             </select>
           </label>
           <label class="merchant-user-form-wide">備註<textarea name="note" rows="3" ${canEditProfile ? "" : "disabled"}>${escapeHtml(user.note || "")}</textarea></label>
-          <label class="merchant-user-form-wide">標籤<textarea name="tags" rows="3" placeholder="以逗號或換行分隔" ${canEditProfile ? "" : "disabled"}>${escapeHtml(tagsInputValue(user.tags))}</textarea></label>
           <p class="merchant-user-readonly">創建時間：${escapeHtml(formatDateTime(user.createdAt))}</p>
           <p class="merchant-user-readonly">更新時間：${escapeHtml(formatDateTime(user.updatedAt))}</p>
         </div>
@@ -792,13 +791,8 @@
       if (hasPermission("usersWrite") && canModifyUser(user)) {
         const profileUpdates = {
           displayName: data.get("displayName"),
-          phone: data.get("phone"),
-          birthday: data.get("birthday"),
-          gender: data.get("gender"),
           note: data.get("note"),
-          tags: data.get("tags")
         };
-        if (user.role === "customer") profileUpdates.address = data.get("address");
         await firebase.updateUserProfile(editingUserId, profileUpdates);
       }
       if (canManagePermissions() && canModifyUser(user)) {

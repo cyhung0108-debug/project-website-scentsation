@@ -580,6 +580,16 @@
   box-sizing: border-box;
 }
 
+.merchant-user-form-grid input[readonly],
+.merchant-user-form-grid input:disabled,
+.merchant-user-form-grid select:disabled,
+.merchant-user-form-grid textarea[readonly],
+.merchant-user-form-grid textarea:disabled {
+  background: #f7f5f0;
+  color: #665f55;
+  cursor: default;
+}
+
 .merchant-user-form-wide {
   grid-column: 1 / -1;
 }
@@ -2436,19 +2446,20 @@ h6 {
 }
 
 .profile-page {
-  width: min(1080px, calc(100% - (var(--page-gutter) * 2)));
+  width: calc(100% - (var(--page-gutter) * 2));
+  max-width: none;
   margin: 0 auto;
   padding: 32px 0 72px;
   display: grid;
-  grid-template-columns: 176px minmax(0, 1fr);
-  gap: 20px;
+  grid-template-columns: 156px minmax(0, 1fr);
+  gap: 16px;
   align-items: start;
 }
 
 .profile-sidebar {
   border: 1px solid #d8d4cc;
   background: #fff;
-  padding: 14px;
+  padding: 12px;
   align-self: start;
 }
 

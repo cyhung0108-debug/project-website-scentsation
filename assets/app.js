@@ -814,7 +814,9 @@
       await firebase.updateCurrentUserProfile?.({
         displayName: data.get("displayName"),
         phone: data.get("phone"),
-        address: data.get("address")
+        address: data.get("address"),
+        birthday: data.get("birthday"),
+        gender: data.get("gender")
       });
       setProfileSettingsMessage("個人資料已更新。", "success");
       showToast("個人資料已更新");
@@ -1333,6 +1335,15 @@
               <label>顯示名稱<input type="text" name="displayName" value="${escapeHtml(profile.displayName || "")}"></label>
               <label>電話<input type="text" name="phone" value="${escapeHtml(profile.phone || "")}"></label>
               <label class="profile-settings-form__wide">地址<textarea name="address" rows="4">${escapeHtml(profile.address || "")}</textarea></label>
+              <label>生日<input type="date" name="birthday" value="${escapeHtml(profile.birthday || "")}"></label>
+              <label>性別
+                <select name="gender">
+                  <option value="" ${!profile.gender ? "selected" : ""}>不透露</option>
+                  <option value="male" ${profile.gender === "male" ? "selected" : ""}>男</option>
+                  <option value="female" ${profile.gender === "female" ? "selected" : ""}>女</option>
+                  <option value="other" ${profile.gender === "other" ? "selected" : ""}>其他</option>
+                </select>
+              </label>
               <p class="profile-settings-form__message" data-profile-settings-message aria-live="polite"></p>
               <div class="profile-settings-form__actions">
                 <button class="checkout-button" type="submit" data-profile-save>儲存個人資料</button>
