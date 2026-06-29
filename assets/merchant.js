@@ -20,6 +20,7 @@
   let categorySortables = [];
   let dashboardUnsubscribers = [];
   let userCreatedSort = "desc";
+  let currentInviteLink = "";
   const BACKOFFICE_ROLES = ["super_admin", "admin", "staff"];
 
   function escapeHtml(value) {
@@ -336,17 +337,7 @@
                 <article class="merchant-stat-card"><span>staff 數量</span><strong data-staff-users>0</strong></article>
                 <article class="merchant-stat-card"><span>blocked 數量</span><strong data-blocked-users>0</strong></article>
               </div>
-              <form class="merchant-invite-form" data-user-invite-form>
-                <label>邀請電郵<input type="email" name="email" placeholder="name@example.com" required></label>
-                <label>身份
-                  <select name="role">
-                    ${isSuperAdmin() ? '<option value="admin">管理員</option>' : ""}
-                    <option value="staff">員工</option>
-                  </select>
-                </label>
-                <button class="merchant-primary-button" type="submit">生成邀請連結</button>
-              </form>
-              <p class="merchant-invite-result" data-user-invite-result aria-live="polite"></p>
+              ${canManageUsers() ? `<div class="merchant-users-toolbar"><button class="merchant-primary-button" type="button" data-open-invite-modal>邀請用戶</button></div>` : ""}
               <p class="merchant-data-message" data-users-message>\u6b63\u5728\u8f09\u5165\u7528\u6236\u8cc7\u6599\u2026</p>
               <div class="merchant-table-wrap" data-users-table></div>
             </div>
@@ -603,6 +594,57 @@
       </form>`;
   }
 
+  function inviteRoleOptions() {
+    if (isSuperAdmin() || isAdmin()) return ["admin", "staff"];
+    return [];
+  }
+
+  function inviteModalContent() {
+    const options = inviteRoleOptions();
+    return `
+      <h2 id="merchantInviteTitle">邀請用戶</h2>
+      <form class="merchant-invite-form" data-user-invite-form>
+        <label>Email
+          <input type="email" name="email" placeholder="name@example.com" required>
+        </label>
+        <label>身份
+          <select name="role">
+            ${options.map((role) => `<option value="${role}">${escapeHtml(roleLabel(role))}</option>`).join("")}
+          </select>
+        </label>
+        <button class="merchant-primary-button" type="submit">生成邀請連結</button>
+      </form>
+      <div class="merchant-invite-result" data-user-invite-result aria-live="polite"></div>
+      <div class="merchant-invite-actions">
+        <button class="merchant-secondary-button" type="button" data-copy-invite-link disabled>一鍵複製</button>
+        <button class="merchant-secondary-button" type="button" data-close-merchant-modal>關閉</button>
+      </div>`;
+  }
+
+  function setInviteResult(message, type = "") {
+    const result = document.querySelector("[data-user-invite-result]");
+    if (!result) return;
+    result.dataset.type = type;
+    result.innerHTML = message;
+  }
+
+  function setInviteCopyState(enabled) {
+    const button = document.querySelector("[data-copy-invite-link]");
+    if (!button) return;
+    button.disabled = !enabled;
+  }
+
+  function openInviteModal() {
+    if (!canManageUsers()) return showMerchantToast("你沒有邀請用戶的權限。");
+    ensureMerchantModals();
+    currentInviteLink = "";
+    const container = document.querySelector("[data-merchant-invite-content]");
+    if (!container) return;
+    container.innerHTML = inviteModalContent();
+    setInviteCopyState(false);
+    openModal(document.querySelector("#merchantInviteModal"));
+  }
+
   async function openUserEditor(userId) {
     if (!hasPermission("usersWrite") && !hasPermission("ordersRead")) return showMerchantToast("你沒有查看用戶資料的權限。");
     const user = editableUserById(userId);
@@ -702,19 +744,34 @@
     const data = new FormData(form);
     const email = String(data.get("email") || "").trim();
     const role = String(data.get("role") || "staff").trim();
-    const result = document.querySelector("[data-user-invite-result]");
-    if (isAdmin() && role !== "staff") {
-      if (result) result.textContent = "管理員只可以邀請員工。";
-      return;
-    }
     try {
       const firebase = await firebaseService();
       const invite = await firebase.createUserInvite?.(email, role, currentMerchant?.uid);
-      const link = new URL(`${rootPrefix()}index.html?auth=register&invite=${encodeURIComponent(invite.token)}`, window.location.href).href;
-      if (result) result.innerHTML = `邀請連結：<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(link)}</a>`;
+      const base = `${window.location.origin}${rootPrefix()}`;
+      const link = `${base}index.html?auth=register&invite=${encodeURIComponent(invite.token)}`;
+      currentInviteLink = link;
+      setInviteResult(`邀請連結：<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(link)}</a>`);
+      setInviteCopyState(true);
       form.reset();
     } catch (error) {
-      if (result) result.textContent = merchantErrorMessage(error, "無法建立邀請。");
+      currentInviteLink = "";
+      setInviteCopyState(false);
+      setInviteResult(merchantErrorMessage(error, "無法建立邀請。"), "error");
+    }
+  }
+
+  async function copyInviteLink() {
+    if (!currentInviteLink) return showMerchantToast("目前沒有可複製的邀請連結。");
+    if (!navigator.clipboard?.writeText) {
+      setInviteResult(`請手動複製邀請連結：<a href="${escapeHtml(currentInviteLink)}" target="_blank" rel="noopener noreferrer">${escapeHtml(currentInviteLink)}</a>`);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(currentInviteLink);
+      setInviteResult("已複製邀請連結");
+      showMerchantToast("已複製邀請連結");
+    } catch (error) {
+      setInviteResult(`請手動複製邀請連結：<a href="${escapeHtml(currentInviteLink)}" target="_blank" rel="noopener noreferrer">${escapeHtml(currentInviteLink)}</a>`, "error");
     }
   }
 
@@ -917,6 +974,14 @@
       modal.innerHTML = `<div class="merchant-modal__overlay" data-close-merchant-modal></div><div class="merchant-modal__panel merchant-modal__panel--confirm" role="dialog" aria-modal="true" aria-labelledby="merchantUserTitle"><button class="merchant-modal__close" type="button" data-close-merchant-modal aria-label="關閉用戶編輯視窗">×</button><div data-merchant-user-content></div></div>`;
       document.body.appendChild(modal);
     }
+    if (!document.querySelector("#merchantInviteModal")) {
+      const modal = document.createElement("div");
+      modal.id = "merchantInviteModal";
+      modal.className = "merchant-modal";
+      modal.setAttribute("aria-hidden", "true");
+      modal.innerHTML = `<div class="merchant-modal__overlay" data-close-merchant-modal></div><div class="merchant-modal__panel merchant-modal__panel--confirm" role="dialog" aria-modal="true" aria-labelledby="merchantInviteTitle"><button class="merchant-modal__close" type="button" data-close-merchant-modal aria-label="關閉邀請用戶視窗">×</button><div data-merchant-invite-content></div></div>`;
+      document.body.appendChild(modal);
+    }
   }
 
   function openModal(modal) {
@@ -941,6 +1006,7 @@
       customerOrdersUnsub = null;
     }
     editingUserOrders = [];
+    currentInviteLink = "";
     document.querySelectorAll(".merchant-modal.is-open").forEach((modal) => {
       modal.classList.remove("is-open");
       modal.setAttribute("aria-hidden", "true");
@@ -1392,6 +1458,8 @@
       window.open(storefrontPreviewUrl(), "_blank", "noopener");
       return;
     }
+    if (event.target.closest("[data-open-invite-modal]")) return openInviteModal();
+    if (event.target.closest("[data-copy-invite-link]")) return copyInviteLink();
     if (event.target.closest("[data-merchant-dashboard-logout]")) return handleMerchantLogout();
     const sectionButton = event.target.closest("[data-merchant-section]");
     if (sectionButton) {

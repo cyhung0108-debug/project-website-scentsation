@@ -278,6 +278,26 @@
   display: none;
 }
 
+.merchant-users-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 14px;
+}
+
+.merchant-invite-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.merchant-invite-result {
+  min-height: 22px;
+}
+
+.merchant-invite-result[data-type="error"] {
+  color: #a12f2f;
+}
+
 .merchant-permission-actions {
   display: flex;
   flex-wrap: wrap;
@@ -538,6 +558,19 @@
 
   .merchant-invite-form {
     grid-template-columns: 1fr;
+  }
+
+  .merchant-users-toolbar {
+    justify-content: stretch;
+  }
+
+  .merchant-users-toolbar .merchant-primary-button,
+  .merchant-invite-actions .merchant-secondary-button {
+    width: 100%;
+  }
+
+  .merchant-invite-actions {
+    flex-direction: column;
   }
 }
 

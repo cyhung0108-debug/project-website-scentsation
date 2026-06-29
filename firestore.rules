@@ -174,7 +174,7 @@ service cloud.firestore {
         && request.resource.data.email is string
         && (
           (isSuperAdmin() && request.resource.data.role in ["admin", "staff"])
-          || (isAdmin() && request.resource.data.role == "staff")
+          || (isAdmin() && request.resource.data.role in ["admin", "staff"])
         )
         && request.resource.data.keys().hasOnly([
           "email", "role", "token", "createdBy", "createdAt", "used", "status"
