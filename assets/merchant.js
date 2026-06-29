@@ -603,18 +603,21 @@
     const options = inviteRoleOptions();
     return `
       <h2 id="merchantInviteTitle">邀請用戶</h2>
-      <form class="merchant-invite-form" data-user-invite-form>
-        <label>Email
+      <form class="merchant-invite-form merchant-invite-form--modal" data-user-invite-form>
+        <label class="merchant-invite-form__field">Email
           <input type="email" name="email" placeholder="name@example.com" required>
         </label>
-        <label>身份
+        <label class="merchant-invite-form__field">身份
           <select name="role">
             ${options.map((role) => `<option value="${role}">${escapeHtml(roleLabel(role))}</option>`).join("")}
           </select>
         </label>
-        <button class="merchant-primary-button" type="submit">生成邀請連結</button>
+        <button class="merchant-primary-button merchant-invite-form__submit" type="submit">生成邀請連結</button>
       </form>
-      <div class="merchant-invite-result" data-user-invite-result aria-live="polite"></div>
+      <div class="merchant-invite-result-card">
+        <p class="merchant-invite-status" data-user-invite-status aria-live="polite"></p>
+        <div class="merchant-invite-result" data-user-invite-result aria-live="polite"></div>
+      </div>
       <div class="merchant-invite-actions">
         <button class="merchant-secondary-button" type="button" data-copy-invite-link disabled>一鍵複製</button>
         <button class="merchant-secondary-button" type="button" data-close-merchant-modal>關閉</button>
@@ -626,6 +629,13 @@
     if (!result) return;
     result.dataset.type = type;
     result.innerHTML = message;
+  }
+
+  function setInviteStatus(message = "", type = "") {
+    const result = document.querySelector("[data-user-invite-status]");
+    if (!result) return;
+    result.dataset.type = type;
+    result.textContent = message;
   }
 
   function setInviteCopyState(enabled) {
@@ -641,6 +651,7 @@
     const container = document.querySelector("[data-merchant-invite-content]");
     if (!container) return;
     container.innerHTML = inviteModalContent();
+    setInviteStatus("");
     setInviteCopyState(false);
     openModal(document.querySelector("#merchantInviteModal"));
   }
@@ -751,11 +762,13 @@
       const link = `${base}index.html?auth=register&invite=${encodeURIComponent(invite.token)}`;
       currentInviteLink = link;
       setInviteResult(`邀請連結：<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(link)}</a>`);
+      setInviteStatus("邀請中...");
       setInviteCopyState(true);
       form.reset();
     } catch (error) {
       currentInviteLink = "";
       setInviteCopyState(false);
+      setInviteStatus("");
       setInviteResult(merchantErrorMessage(error, "無法建立邀請。"), "error");
     }
   }
@@ -763,14 +776,17 @@
   async function copyInviteLink() {
     if (!currentInviteLink) return showMerchantToast("目前沒有可複製的邀請連結。");
     if (!navigator.clipboard?.writeText) {
+      setInviteStatus("邀請中...");
       setInviteResult(`請手動複製邀請連結：<a href="${escapeHtml(currentInviteLink)}" target="_blank" rel="noopener noreferrer">${escapeHtml(currentInviteLink)}</a>`);
       return;
     }
     try {
       await navigator.clipboard.writeText(currentInviteLink);
-      setInviteResult("已複製邀請連結");
+      setInviteStatus("已複製邀請連結");
+      setInviteResult(`邀請連結：<a href="${escapeHtml(currentInviteLink)}" target="_blank" rel="noopener noreferrer">${escapeHtml(currentInviteLink)}</a>`);
       showMerchantToast("已複製邀請連結");
     } catch (error) {
+      setInviteStatus("邀請中...", "error");
       setInviteResult(`請手動複製邀請連結：<a href="${escapeHtml(currentInviteLink)}" target="_blank" rel="noopener noreferrer">${escapeHtml(currentInviteLink)}</a>`, "error");
     }
   }
@@ -979,7 +995,7 @@
       modal.id = "merchantInviteModal";
       modal.className = "merchant-modal";
       modal.setAttribute("aria-hidden", "true");
-      modal.innerHTML = `<div class="merchant-modal__overlay" data-close-merchant-modal></div><div class="merchant-modal__panel merchant-modal__panel--confirm" role="dialog" aria-modal="true" aria-labelledby="merchantInviteTitle"><button class="merchant-modal__close" type="button" data-close-merchant-modal aria-label="關閉邀請用戶視窗">×</button><div data-merchant-invite-content></div></div>`;
+      modal.innerHTML = `<div class="merchant-modal__overlay" data-close-merchant-modal></div><div class="merchant-modal__panel merchant-modal__panel--invite" role="dialog" aria-modal="true" aria-labelledby="merchantInviteTitle"><button class="merchant-modal__close" type="button" data-close-merchant-modal aria-label="關閉邀請用戶視窗">×</button><div data-merchant-invite-content></div></div>`;
       document.body.appendChild(modal);
     }
   }
