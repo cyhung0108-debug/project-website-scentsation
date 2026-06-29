@@ -38,11 +38,79 @@
   }
 
   function isAllowedMerchant(user, role = currentMerchantRole) {
-    return Boolean(user?.uid && role?.active === true && role.role === "merchant");
+    return Boolean(user?.uid && role?.active === true && ["super_admin", "admin", "staff"].includes(role.role));
   }
 
   function hasPermission(permission, role = currentMerchantRole) {
+    if (!role?.active) return false;
+    if (permission === "usersRead" || permission === "usersWrite" || permission === "ordersRead") {
+      return ["super_admin", "admin"].includes(role.role);
+    }
+    if (permission === "productsWrite" || permission === "pagesWrite") {
+      return ["super_admin", "admin", "staff"].includes(role.role);
+    }
+    if (permission === "permissionsWrite") {
+      return ["super_admin", "admin"].includes(role.role);
+    }
     return role?.permissions?.[permission] === true;
+  }
+
+  function isSuperAdmin(role = currentMerchantRole) {
+    return role?.active === true && role.role === "super_admin";
+  }
+
+  function isAdmin(role = currentMerchantRole) {
+    return role?.active === true && role.role === "admin";
+  }
+
+  function isStaff(role = currentMerchantRole) {
+    return role?.active === true && role.role === "staff";
+  }
+
+  function canManageUsers(role = currentMerchantRole) {
+    return isSuperAdmin(role) || isAdmin(role);
+  }
+
+  function canManagePermissions(role = currentMerchantRole) {
+    return isSuperAdmin(role) || isAdmin(role);
+  }
+
+  function canManageProducts(role = currentMerchantRole) {
+    return isSuperAdmin(role) || isAdmin(role) || isStaff(role);
+  }
+
+  function canManagePages(role = currentMerchantRole) {
+    return isSuperAdmin(role) || isAdmin(role) || isStaff(role);
+  }
+
+  function canReadSales(role = currentMerchantRole) {
+    return isSuperAdmin(role) || isAdmin(role);
+  }
+
+  function roleLabel(role) {
+    const labels = {
+      super_admin: "最高管理員",
+      admin: "管理員",
+      staff: "員工",
+      customer: "顧客",
+      merchant: "商戶"
+    };
+    return labels[role] || role || "顧客";
+  }
+
+  function roleFromUserProfile(profile) {
+    const role = String(profile?.role || "").trim();
+    return {
+      role,
+      active: profile?.status !== "blocked" && ["super_admin", "admin", "staff"].includes(role),
+      permissions: {}
+    };
+  }
+
+  function roleOptionsForEditor(targetRole = "customer") {
+    if (isSuperAdmin()) return ["super_admin", "admin", "staff", "customer"];
+    if (isAdmin() && !["super_admin", "admin"].includes(targetRole)) return ["staff", "customer"];
+    return [];
   }
 
   function rootPrefix() {
@@ -185,12 +253,13 @@
     if (!container) return;
     document.title = "\u5546\u6236\u5f8c\u53f0 - APOTHEKE";
     const sections = [
-      { id: "users", label: "\u7528\u6236\u7ba1\u7406" },
-      { id: "sales", label: "\u92b7\u552e\u7ba1\u7406" },
-      { id: "products", label: "\u7522\u54c1\u7ba1\u7406" },
-      { id: "site", label: "\u7db2\u9801\u7ba1\u7406" }
-    ];
-    const activeSection = "users";
+      canManageUsers() ? { id: "users", label: "\u7528\u6236\u7ba1\u7406" } : null,
+      canReadSales() ? { id: "sales", label: "\u92b7\u552e\u7ba1\u7406" } : null,
+      canManageProducts() ? { id: "products", label: "\u7522\u54c1\u7ba1\u7406" } : null,
+      canManagePages() ? { id: "site", label: "\u7db2\u9801\u7ba1\u7406" } : null,
+      canManagePermissions() ? { id: "permissions", label: "\u6b0a\u9650\u7ba1\u7406" } : null
+    ].filter(Boolean);
+    const activeSection = sections[0]?.id || "products";
     const navHtml = sections
       .map((section) => `<button class="${section.id === activeSection ? "is-active" : ""}" type="button" data-merchant-section="${section.id}">${section.label}</button>`)
       .join("");
@@ -208,7 +277,21 @@
             <div class="merchant-data-panel" data-users-panel>
               <div class="merchant-stat-grid">
                 <article class="merchant-stat-card"><span>\u7e3d\u7528\u6236\u6578</span><strong data-total-users>0</strong></article>
+                <article class="merchant-stat-card"><span>admin 數量</span><strong data-admin-users>0</strong></article>
+                <article class="merchant-stat-card"><span>staff 數量</span><strong data-staff-users>0</strong></article>
+                <article class="merchant-stat-card"><span>blocked 數量</span><strong data-blocked-users>0</strong></article>
               </div>
+              <form class="merchant-invite-form" data-user-invite-form>
+                <label>邀請電郵<input type="email" name="email" placeholder="name@example.com" required></label>
+                <label>身份
+                  <select name="role">
+                    ${isSuperAdmin() ? '<option value="admin">管理員</option>' : ""}
+                    <option value="staff">員工</option>
+                  </select>
+                </label>
+                <button class="merchant-primary-button" type="submit">生成邀請連結</button>
+              </form>
+              <p class="merchant-invite-result" data-user-invite-result aria-live="polite"></p>
               <p class="merchant-data-message" data-users-message>\u6b63\u5728\u8f09\u5165\u7528\u6236\u8cc7\u6599\u2026</p>
               <div class="merchant-table-wrap" data-users-table></div>
             </div>
@@ -249,6 +332,13 @@
               <p class="merchant-data-message">\u9019\u500b\u5340\u57df\u5c07\u7528\u65bc\u7ba1\u7406\u9996\u9801\u5167\u5bb9\u3001\u516c\u53f8\u8cc7\u6599\u548c\u7db2\u9801\u8a2d\u5b9a\u3002\u76ee\u524d\u5148\u4fdd\u7559\u57fa\u672c\u7248\u9762\u3002</p>
             </div>
           </section>
+          <section class="merchant-dashboard-section ${activeSection === "permissions" ? "is-active" : ""}" data-merchant-panel="permissions">
+            <h1>權限管理</h1>
+            <div class="merchant-data-panel" data-permissions-panel>
+              <p class="merchant-data-message" data-permissions-message>正在載入權限資料…</p>
+              <div class="merchant-table-wrap" data-permissions-table></div>
+            </div>
+          </section>
         </main>
       </section>`;
   }
@@ -256,10 +346,17 @@
   function renderUsers(users) {
     currentUsers = Array.isArray(users) ? users : [];
     const total = document.querySelector("[data-total-users]");
+    const adminTotal = document.querySelector("[data-admin-users]");
+    const staffTotal = document.querySelector("[data-staff-users]");
+    const blockedTotal = document.querySelector("[data-blocked-users]");
     const message = document.querySelector("[data-users-message]");
     const table = document.querySelector("[data-users-table]");
     if (!total || !message || !table) return;
     total.textContent = String(currentUsers.length);
+    if (adminTotal) adminTotal.textContent = String(currentUsers.filter((user) => user.role === "admin").length);
+    if (staffTotal) staffTotal.textContent = String(currentUsers.filter((user) => user.role === "staff").length);
+    if (blockedTotal) blockedTotal.textContent = String(currentUsers.filter((user) => user.status === "blocked").length);
+    renderPermissions();
     if (!currentUsers.length) {
       message.textContent = "暫時沒有用戶資料。";
       table.innerHTML = "";
@@ -276,7 +373,7 @@
             <tr>
               <td>${escapeHtml(user.email || "未有電郵")}</td>
               <td>${escapeHtml(user.displayName || "未有名稱")}</td>
-              <td>${user.role === "merchant" ? "商戶" : "顧客"}</td>
+              <td>${escapeHtml(roleLabel(user.role))}</td>
               <td>${user.status === "blocked" ? "已封鎖" : "正常"}</td>
               <td>${escapeHtml(formatDateTime(user.lastLoginAt))}</td>
               ${hasPermission("usersWrite") || hasPermission("ordersRead") ? `<td><button class="merchant-table-action" type="button" data-edit-user="${escapeHtml(user.uid || user.id)}">修改</button></td>` : ""}
@@ -295,6 +392,56 @@
       ? "目前 Firestore Rules 未允許商戶讀取 users collection。請按回報中的步驟更新 Firestore Rules。"
       : merchantErrorMessage(error, "無法讀取用戶資料。");
     if (table) table.innerHTML = "";
+    const permissionMessage = document.querySelector("[data-permissions-message]");
+    const permissionTable = document.querySelector("[data-permissions-table]");
+    if (permissionMessage) permissionMessage.textContent = message.textContent;
+    if (permissionTable) permissionTable.innerHTML = "";
+  }
+
+  function renderPermissions() {
+    const message = document.querySelector("[data-permissions-message]");
+    const table = document.querySelector("[data-permissions-table]");
+    if (!message || !table) return;
+    if (!canManagePermissions()) {
+      message.textContent = "你沒有權限管理用戶身份。";
+      table.innerHTML = "";
+      return;
+    }
+    if (!currentUsers.length) {
+      message.textContent = "暫時沒有用戶資料。";
+      table.innerHTML = "";
+      return;
+    }
+    message.textContent = "";
+    table.innerHTML = `
+      <table class="merchant-data-table">
+        <thead>
+          <tr><th>用戶名稱</th><th>User ID</th><th>電郵</th><th>目前身份</th><th>狀態</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          ${currentUsers.map((user) => {
+            const userId = escapeHtml(user.uid || user.id);
+            const options = roleOptionsForEditor(user.role);
+            return `
+              <tr>
+                <td>${escapeHtml(user.displayName || "未有名稱")}</td>
+                <td>${userId}</td>
+                <td>${escapeHtml(user.email || "未有電郵")}</td>
+                <td>${escapeHtml(roleLabel(user.role))}</td>
+                <td>${user.status === "blocked" ? "已封鎖" : "正常"}</td>
+                <td class="merchant-permission-actions">
+                  ${options.length ? `
+                    <select data-user-role="${userId}">
+                      ${options.map((role) => `<option value="${role}" ${user.role === role ? "selected" : ""}>${escapeHtml(roleLabel(role))}</option>`).join("")}
+                    </select>
+                    <button class="merchant-table-action" type="button" data-update-user-role="${userId}">更新</button>
+                  ` : '<span>不可修改</span>'}
+                  <button class="merchant-table-action" type="button" data-block-user="${userId}" ${user.status === "blocked" ? "disabled" : ""}>封鎖</button>
+                </td>
+              </tr>`;
+          }).join("")}
+        </tbody>
+      </table>`;
   }
 
   function editableUserById(userId) {
@@ -342,7 +489,7 @@
           <p class="merchant-user-readonly">電郵：${escapeHtml(user.email || "未有電郵")}</p>
           <p class="merchant-user-readonly">UID：${escapeHtml(user.uid || user.id)}</p>
           <p class="merchant-user-readonly">顯示名稱：${escapeHtml(user.displayName || "未設定")}</p>
-          <p class="merchant-user-readonly">角色：${escapeHtml(user.role === "merchant" ? "商戶" : "顧客")}</p>
+          <p class="merchant-user-readonly">角色：${escapeHtml(roleLabel(user.role))}</p>
           <p class="merchant-user-readonly">狀態：${escapeHtml(user.status === "blocked" ? "已封鎖" : "正常")}</p>
           <p class="merchant-user-readonly">電話：${escapeHtml(user.phone || "未設定")}</p>
           <p class="merchant-user-readonly merchant-user-readonly--wide">地址：${escapeHtml(user.address || "未設定")}</p>
@@ -425,6 +572,61 @@
       button.disabled = false;
       button.textContent = "儲存";
       setUserEditorError(merchantErrorMessage(error, "無法更新用戶資料。"));
+    }
+  }
+
+  async function createInvite(form) {
+    if (!canManageUsers()) return showMerchantToast("你沒有邀請用戶的權限。");
+    const data = new FormData(form);
+    const email = String(data.get("email") || "").trim();
+    const role = String(data.get("role") || "staff").trim();
+    const result = document.querySelector("[data-user-invite-result]");
+    if (isAdmin() && role !== "staff") {
+      if (result) result.textContent = "管理員只可以邀請員工。";
+      return;
+    }
+    try {
+      const firebase = await firebaseService();
+      const invite = await firebase.createUserInvite?.(email, role, currentMerchant?.uid);
+      const link = new URL(`${rootPrefix()}index.html?auth=register&invite=${encodeURIComponent(invite.token)}`, window.location.href).href;
+      if (result) result.innerHTML = `邀請連結：<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(link)}</a>`;
+      form.reset();
+    } catch (error) {
+      if (result) result.textContent = merchantErrorMessage(error, "無法建立邀請。");
+    }
+  }
+
+  async function updateUserRole(userId) {
+    if (!canManagePermissions()) return showMerchantToast("你沒有權限管理用戶身份。");
+    const user = editableUserById(userId);
+    const select = document.querySelector(`[data-user-role="${CSS.escape(userId)}"]`);
+    const role = select?.value || "";
+    if (!user || !role) return showMerchantToast("找不到此用戶。");
+    if (isAdmin() && (["super_admin", "admin"].includes(user.role) || !["staff", "customer"].includes(role))) {
+      return showMerchantToast("管理員只能把用戶設定為員工或顧客。");
+    }
+    try {
+      const firebase = await firebaseService();
+      await firebase.updateUserAccess?.(userId, { role });
+      showMerchantToast("用戶身份已更新");
+    } catch (error) {
+      showMerchantToast(merchantErrorMessage(error, "無法更新用戶身份。"));
+    }
+  }
+
+  async function blockUser(userId) {
+    if (!canManagePermissions()) return showMerchantToast("你沒有權限封鎖用戶。");
+    const user = editableUserById(userId);
+    if (!user) return showMerchantToast("找不到此用戶。");
+    if (isAdmin() && ["super_admin", "admin"].includes(user.role)) {
+      return showMerchantToast("管理員不可封鎖管理員或最高管理員。");
+    }
+    try {
+      const firebase = await firebaseService();
+      await firebase.updateUserAccess?.(userId, { status: "blocked" });
+      showMerchantToast("用戶已封鎖");
+    } catch (error) {
+      showMerchantToast(merchantErrorMessage(error, "無法封鎖用戶。"));
     }
   }
 
@@ -967,8 +1169,9 @@
     try {
       const firebase = await firebaseService();
       merchantRole = await firebase.getMerchantRole?.(user.uid);
-      currentMerchantRole = merchantRole;
       await firebase.upsertCurrentUserProfile?.(user, merchantRole);
+      const profile = await firebase.getUserProfile?.(user.uid);
+      currentMerchantRole = roleFromUserProfile(profile) || merchantRole;
     } catch (error) {
       currentMerchantRole = null;
       console.warn("無法讀取或同步商戶權限。", error);
@@ -976,7 +1179,7 @@
 
     updateMerchantNav(user);
 
-    if (!isAllowedMerchant(user, merchantRole)) {
+    if (!isAllowedMerchant(user, currentMerchantRole)) {
       currentMerchant = null;
       currentMerchantRole = null;
       cleanupDashboardListeners();
@@ -1011,6 +1214,12 @@
     }
   }
   document.addEventListener("submit", async (event) => {
+    const inviteForm = event.target.closest("[data-user-invite-form]");
+    if (inviteForm && currentMerchant) {
+      event.preventDefault();
+      await createInvite(inviteForm);
+      return;
+    }
     const userForm = event.target.closest("[data-merchant-user-form]");
     if (userForm && currentMerchant) {
       event.preventDefault();
@@ -1077,6 +1286,10 @@
     if (event.target.closest("[data-add-product]")) return openEditor();
     const editUserButton = event.target.closest("[data-edit-user]");
     if (editUserButton) return openUserEditor(editUserButton.dataset.editUser);
+    const updateRoleButton = event.target.closest("[data-update-user-role]");
+    if (updateRoleButton) return updateUserRole(updateRoleButton.dataset.updateUserRole);
+    const blockUserButton = event.target.closest("[data-block-user]");
+    if (blockUserButton) return blockUser(blockUserButton.dataset.blockUser);
     const editButton = event.target.closest("[data-edit-product]");
     if (editButton) return openEditor(editButton.dataset.editProduct);
     const removeImage = event.target.closest("[data-remove-editor-image]");

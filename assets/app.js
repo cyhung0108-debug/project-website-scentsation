@@ -11,7 +11,10 @@
     toastTimer: null,
     authMode: "login",
     authEntryRequested: false,
+    authEntryMode: "login",
     authRedirect: "",
+    authInviteToken: "",
+    authPendingInvite: null,
     authTab: "email",
     authBusy: false,
     authPendingAction: "",
@@ -107,15 +110,29 @@
     return new URLSearchParams(window.location.search).get("preview") === "store";
   }
 
+  function isDashboardRole(role) {
+    return ["super_admin", "admin", "staff"].includes(String(role || "").trim());
+  }
+
   function initAuthEntryFromUrl() {
     const params = new URLSearchParams(window.location.search);
     const auth = String(params.get("auth") || "").trim();
     const redirect = String(params.get("redirect") || "").trim();
+    const invite = String(params.get("invite") || "").trim();
     if (redirect) state.authRedirect = redirect;
-    if (auth === "login") state.authEntryRequested = true;
-    if (!auth && !redirect) return;
+    if (invite) state.authInviteToken = invite;
+    if (auth === "login" || auth === "register") {
+      state.authEntryRequested = true;
+      state.authEntryMode = auth === "register" ? "register" : "login";
+    }
+    if (invite && !auth) {
+      state.authEntryRequested = true;
+      state.authEntryMode = "register";
+    }
+    if (!auth && !redirect && !invite) return;
     params.delete("auth");
     params.delete("redirect");
+    params.delete("invite");
     const nextQuery = params.toString();
     const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}${window.location.hash || ""}`;
     window.history.replaceState({}, "", nextUrl);
@@ -433,7 +450,7 @@
           renderProfilePage();
           if (state.authEntryRequested) {
             state.authEntryRequested = false;
-            openAuthModal("login");
+            openAuthModal(state.authEntryMode || "login");
           }
           return;
         }
@@ -448,7 +465,10 @@
           console.warn("\u540c\u6b65\u6703\u54e1\u8cc7\u6599\u5931\u6557\u3002", error);
         }
 
-        if (profile?.status === "blocked" && profile?.role !== "merchant") {
+        const userRole = String(profile?.role || "").trim();
+        const canUseDashboard = isDashboardRole(userRole) && profile?.status !== "blocked";
+
+        if (profile?.status === "blocked") {
           state.authPendingAction = "";
           queueAuthNotice("\u767b\u5165\u5931\u6557 \u60a8\u7684\u8cec\u865f\u5df2\u88ab\u5c01\u9396");
           try {
@@ -470,7 +490,7 @@
         currentUserProfileUnsub = firebase.listenUserProfile?.(user.uid, async (nextProfile) => {
           state.currentUserProfile = nextProfile || null;
           renderProfilePage();
-          if (!nextProfile || nextProfile.role === "merchant" || nextProfile.status !== "blocked") return;
+          if (!nextProfile || nextProfile.status !== "blocked") return;
           state.authPendingAction = "";
           queueAuthNotice("\u767b\u5165\u5931\u6557 \u60a8\u7684\u8cec\u865f\u5df2\u88ab\u5c01\u9396");
           try {
@@ -485,7 +505,7 @@
           window.location.replace(homeUrl());
         });
 
-        if (normalizedUser && state.authRedirect === "merchant-dashboard" && merchantRole?.active === true && merchantRole.role === "merchant") {
+        if (normalizedUser && state.authRedirect === "merchant-dashboard" && canUseDashboard) {
           state.authRedirect = "";
           if (state.authPendingAction) {
             state.authPendingAction = "";
@@ -495,7 +515,7 @@
           return;
         }
 
-        if (document.body?.dataset.page === "profile" && merchantRole?.active === true && merchantRole.role === "merchant") {
+        if (document.body?.dataset.page === "profile" && canUseDashboard) {
           window.location.replace(merchantDashboardUrl());
           return;
         }
@@ -637,6 +657,20 @@
     renderAuthModal();
   }
 
+  async function validateInviteForEmail(firebase, email) {
+    if (!state.authInviteToken) return null;
+    const invite = await firebase.getUserInvite?.(state.authInviteToken);
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    if (!invite || invite.used || invite.status !== "pending") {
+      throw new Error("邀請連結已失效。");
+    }
+    if (String(invite.email || "").trim().toLowerCase() !== normalizedEmail) {
+      throw new Error("註冊電郵與邀請電郵不相符。");
+    }
+    state.authPendingInvite = invite;
+    return invite;
+  }
+
   async function handleRegister() {
     const email = $(".auth-field-email")?.value.trim();
     const password = $(".auth-field-password")?.value;
@@ -650,10 +684,17 @@
     setAuthMessage("正在建立帳戶…");
     try {
       const firebase = await getFirebaseService();
-      await firebase.createUserWithEmailAndPassword(firebase.auth, email, password);
+      await validateInviteForEmail(firebase, email);
+      const credential = await firebase.createUserWithEmailAndPassword(firebase.auth, email, password);
+      if (state.authInviteToken) {
+        const acceptedInvite = await firebase.acceptUserInvite?.(state.authInviteToken, credential.user);
+        state.authInviteToken = "";
+        state.authPendingInvite = null;
+        if (isDashboardRole(acceptedInvite?.role)) window.location.replace(merchantDashboardUrl());
+      }
     } catch (error) {
       state.authPendingAction = "";
-      setAuthMessage(firebaseAuthMessage(error), "error");
+      setAuthMessage(error?.code ? firebaseAuthMessage(error) : error.message, "error");
     } finally {
       setAuthBusy(false);
     }
@@ -684,10 +725,22 @@
     setAuthMessage("正在啟動 Google 登入…");
     try {
       const firebase = await getFirebaseService();
-      await firebase.signInWithPopup(firebase.auth, firebase.googleProvider);
+      const credential = await firebase.signInWithPopup(firebase.auth, firebase.googleProvider);
+      if (state.authInviteToken && state.authMode === "register") {
+        try {
+          await validateInviteForEmail(firebase, credential.user?.email || "");
+          const acceptedInvite = await firebase.acceptUserInvite?.(state.authInviteToken, credential.user);
+          state.authInviteToken = "";
+          state.authPendingInvite = null;
+          if (isDashboardRole(acceptedInvite?.role)) window.location.replace(merchantDashboardUrl());
+        } catch (inviteError) {
+          await firebase.signOut(firebase.auth);
+          throw inviteError;
+        }
+      }
     } catch (error) {
       state.authPendingAction = "";
-      setAuthMessage(firebaseAuthMessage(error), "error");
+      setAuthMessage(error?.code ? firebaseAuthMessage(error) : error.message, "error");
     } finally {
       setAuthBusy(false);
     }
@@ -1256,7 +1309,7 @@
           </nav>
         </aside>
         <div class="profile-content">
-          <section class="profile-panel ${currentTab === "profile" ? "is-active" : ""}">
+          <section class="profile-panel ${currentTab === "profile" ? "is-active" : ""}" ${currentTab === "profile" ? "" : "hidden"}>
             <h2>個人資料</h2>
             <form class="profile-settings-form" data-profile-settings-form>
               <label>電郵<input type="email" name="email" value="${escapeHtml(emailValue)}"></label>
@@ -1270,7 +1323,7 @@
             </form>
           </section>
 
-          <section class="profile-panel ${currentTab === "orders" ? "is-active" : ""}">
+          <section class="profile-panel ${currentTab === "orders" ? "is-active" : ""}" ${currentTab === "orders" ? "" : "hidden"}>
             <h2>訂單記錄</h2>
             ${orders.length ? `
               <div class="profile-orders">
@@ -1302,7 +1355,7 @@
             ` : `<p class="profile-empty-message">暫時沒有訂單</p>`}
           </section>
 
-          <section class="profile-panel ${currentTab === "security" ? "is-active" : ""}">
+          <section class="profile-panel ${currentTab === "security" ? "is-active" : ""}" ${currentTab === "security" ? "" : "hidden"}>
             <h2>帳戶安全</h2>
             <div class="profile-security">
               <article class="profile-security__card">

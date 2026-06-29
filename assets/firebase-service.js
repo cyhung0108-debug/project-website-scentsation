@@ -41,6 +41,16 @@
       return user?.providerData?.[0]?.providerId || "password";
     }
 
+    function normalizeRole(value) {
+      const role = String(value || "").trim();
+      if (role === "merchant") return "super_admin";
+      return ["super_admin", "admin", "staff", "customer"].includes(role) ? role : "customer";
+    }
+
+    function isDashboardRole(role) {
+      return ["super_admin", "admin", "staff"].includes(normalizeRole(role));
+    }
+
     function normalizeTimestamp(value) {
       if (!value) return "";
       if (typeof value.toDate === "function") return value.toDate().toISOString();
@@ -52,6 +62,8 @@
       const data = { id: snapshot.id, ...snapshot.data() };
       return {
         ...data,
+        role: normalizeRole(data.role),
+        status: String(data.status || "active"),
         address: String(data.address || ""),
         gender: String(data.gender || ""),
         birthday: String(data.birthday || ""),
@@ -65,18 +77,24 @@
     function normalizeMerchantRole(snapshot) {
       if (!snapshot.exists()) return null;
       const data = snapshot.data() || {};
-      const hasExplicitPermissions = data.permissions && typeof data.permissions === "object";
-      const legacyFullAccess = data.role === "merchant" && data.active === true && !hasExplicitPermissions;
+      const permissions = data.permissions && typeof data.permissions === "object" ? data.permissions : null;
+      const role = data.role === "merchant" ? "super_admin" : normalizeRole(data.role);
+      const legacyActiveMerchant = data.active === true && isDashboardRole(role);
+      const hasPermission = (key) => {
+        if (!legacyActiveMerchant) return false;
+        if (!permissions || !(key in permissions)) return true;
+        return permissions[key] === true;
+      };
       return {
         id: snapshot.id,
-        role: data.role || "",
+        role,
         active: data.active === true,
         permissions: {
-          usersRead: legacyFullAccess || data.permissions?.usersRead === true,
-          usersWrite: legacyFullAccess || data.permissions?.usersWrite === true,
-          ordersRead: legacyFullAccess || data.permissions?.ordersRead === true,
-          productsWrite: legacyFullAccess || data.permissions?.productsWrite === true,
-          pagesWrite: legacyFullAccess || data.permissions?.pagesWrite === true
+          usersRead: hasPermission("usersRead"),
+          usersWrite: hasPermission("usersWrite"),
+          ordersRead: hasPermission("ordersRead"),
+          productsWrite: hasPermission("productsWrite"),
+          pagesWrite: hasPermission("pagesWrite")
         }
       };
     }
@@ -116,13 +134,20 @@
         }
       }
       const now = firestoreSdk.serverTimestamp();
+      const currentData = currentSnapshot.exists() ? currentSnapshot.data() || {} : {};
+      const currentRole = normalizeRole(currentData.role);
+      const hasLegacyDashboardRole = role?.active === true && isDashboardRole(role.role);
+      const nextRole = !currentSnapshot.exists()
+        ? (hasLegacyDashboardRole ? "super_admin" : "customer")
+        : ((currentData.role === "merchant" || (hasLegacyDashboardRole && currentRole === "customer")) ? "super_admin" : currentRole);
       const payload = {
         uid,
         email: user.email || "",
         displayName: user.displayName || "",
         providerId: userProviderId(user),
         lastLoginAt: now,
-        role: role?.active && role.role === "merchant" ? "merchant" : "customer"
+        updatedAt: now,
+        role: nextRole
       };
       if (!currentSnapshot.exists()) {
         payload.createdAt = now;
@@ -146,6 +171,96 @@
       allowed.updatedAt = firestoreSdk.serverTimestamp();
       await firestoreSdk.setDoc(firestoreSdk.doc(db, "users", uid), allowed, { merge: true });
       return { id: uid, ...allowed };
+    }
+
+    async function updateUserAccess(userId, updates) {
+      const uid = String(userId || "").trim();
+      if (!uid) throw new Error("請提供用戶 UID。");
+      const allowed = {};
+      if ("role" in updates) allowed.role = normalizeRole(updates.role);
+      if ("status" in updates) allowed.status = String(updates.status || "active").trim() || "active";
+      allowed.updatedAt = firestoreSdk.serverTimestamp();
+      await firestoreSdk.setDoc(firestoreSdk.doc(db, "users", uid), allowed, { merge: true });
+      return { id: uid, ...allowed };
+    }
+
+    function generateInviteToken() {
+      const bytes = new Uint8Array(24);
+      crypto.getRandomValues(bytes);
+      return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    }
+
+    function normalizeInviteRecord(snapshot) {
+      if (!snapshot.exists()) return null;
+      const data = { id: snapshot.id, ...snapshot.data() };
+      return {
+        ...data,
+        role: normalizeRole(data.role),
+        email: String(data.email || "").trim().toLowerCase(),
+        token: String(data.token || snapshot.id),
+        status: String(data.status || "pending"),
+        used: data.used === true,
+        createdAt: normalizeTimestamp(data.createdAt),
+        usedAt: normalizeTimestamp(data.usedAt)
+      };
+    }
+
+    async function getUserInvite(token) {
+      const normalizedToken = String(token || "").trim();
+      if (!normalizedToken) return null;
+      return normalizeInviteRecord(await firestoreSdk.getDoc(firestoreSdk.doc(db, "userInvites", normalizedToken)));
+    }
+
+    async function createUserInvite(email, role, createdBy) {
+      const normalizedEmail = String(email || "").trim().toLowerCase();
+      const normalizedRole = normalizeRole(role);
+      if (!normalizedEmail) throw new Error("請輸入邀請電郵。");
+      if (!["admin", "staff"].includes(normalizedRole)) throw new Error("邀請身份不正確。");
+      const token = generateInviteToken();
+      const payload = {
+        email: normalizedEmail,
+        role: normalizedRole,
+        token,
+        createdBy: String(createdBy || auth.currentUser?.uid || ""),
+        createdAt: firestoreSdk.serverTimestamp(),
+        used: false,
+        status: "pending"
+      };
+      await firestoreSdk.setDoc(firestoreSdk.doc(db, "userInvites", token), payload);
+      return { id: token, ...payload };
+    }
+
+    async function acceptUserInvite(token, user) {
+      const normalizedToken = String(token || "").trim();
+      if (!normalizedToken || !user?.uid) throw new Error("邀請連結無效。");
+      const invite = await getUserInvite(normalizedToken);
+      const userEmail = String(user.email || "").trim().toLowerCase();
+      if (!invite || invite.used || invite.status !== "pending") throw new Error("邀請已失效。");
+      if (invite.email !== userEmail) throw new Error("註冊電郵與邀請電郵不相符。");
+      const batch = firestoreSdk.writeBatch(db);
+      const now = firestoreSdk.serverTimestamp();
+      const userRef = firestoreSdk.doc(db, "users", String(user.uid));
+      const userSnapshot = await firestoreSdk.getDoc(userRef);
+      const userPayload = {
+        uid: String(user.uid),
+        email: user.email || "",
+        displayName: user.displayName || "",
+        providerId: userProviderId(user),
+        role: invite.role,
+        status: "active",
+        inviteToken: normalizedToken,
+        updatedAt: now
+      };
+      if (!userSnapshot.exists()) userPayload.createdAt = now;
+      batch.set(userRef, userPayload, { merge: true });
+      batch.update(firestoreSdk.doc(db, "userInvites", normalizedToken), {
+        used: true,
+        status: "used",
+        usedBy: String(user.uid),
+        usedAt: now
+      });
+      await batch.commit();
+      return invite;
     }
 
     async function updateCurrentUserProfile(updates) {
@@ -422,6 +537,7 @@
       getUserProfile,
       upsertCurrentUserProfile,
       updateUserProfile,
+      updateUserAccess,
       updateCurrentUserProfile,
       updateCurrentUserEmail,
       listenUsers,
@@ -430,6 +546,9 @@
       listenCurrentUserOrders,
       listenOrdersByCustomer,
       updateOrder,
+      createUserInvite,
+      getUserInvite,
+      acceptUserInvite,
       uploadProductImage,
       deleteProductImage,
       isManagedStorageUrl

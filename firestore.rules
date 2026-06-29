@@ -10,97 +10,197 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function invitePath(token) {
+      return /databases/$(database)/documents/userInvites/$(token);
+    }
+
     function merchantRolePath() {
       return /databases/$(database)/documents/merchantRoles/$(request.auth.uid);
     }
 
-    function isMerchant() {
+    function hasUserProfile() {
+      return isSignedIn() && exists(userPath(request.auth.uid));
+    }
+
+    function legacyMerchantActive() {
       return isSignedIn()
         && exists(merchantRolePath())
         && get(merchantRolePath()).data.role == "merchant"
         && get(merchantRolePath()).data.active == true;
     }
 
-    function usesLegacyMerchantAccess() {
-      return isMerchant()
-        && !(get(merchantRolePath()).data.permissions is map);
+    function currentUserRole() {
+      return hasUserProfile() ? get(userPath(request.auth.uid)).data.role : (legacyMerchantActive() ? "super_admin" : "");
     }
 
-    function canReadUsers() {
-      return isMerchant()
-        && (usesLegacyMerchantAccess()
-          || get(merchantRolePath()).data.permissions.usersRead == true);
+    function currentUserStatus() {
+      return hasUserProfile() ? get(userPath(request.auth.uid)).data.status : (legacyMerchantActive() ? "active" : "");
     }
 
-    function canWriteUsers() {
-      return isMerchant()
-        && (usesLegacyMerchantAccess()
-          || get(merchantRolePath()).data.permissions.usersWrite == true);
+    function isActiveUser() {
+      return isSignedIn() && currentUserStatus() != "blocked";
     }
 
-    function canReadOrders() {
-      return isMerchant()
-        && (usesLegacyMerchantAccess()
-          || get(merchantRolePath()).data.permissions.ordersRead == true);
+    function isSuperAdmin() {
+      return isActiveUser() && currentUserRole() == "super_admin";
     }
 
-    function canWriteProducts() {
-      return isMerchant()
-        && (usesLegacyMerchantAccess()
-          || get(merchantRolePath()).data.permissions.productsWrite == true);
+    function isAdmin() {
+      return isActiveUser() && currentUserRole() == "admin";
     }
 
-    function canWritePages() {
-      return isMerchant()
-        && (usesLegacyMerchantAccess()
-          || get(merchantRolePath()).data.permissions.pagesWrite == true);
+    function isStaff() {
+      return isActiveUser() && currentUserRole() == "staff";
     }
 
-    function expectedUserRole() {
-      return isMerchant() ? "merchant" : "customer";
+    function canAccessDashboard() {
+      return isSuperAdmin() || isAdmin() || isStaff();
     }
 
-    function validUserSelfUpdate(userId) {
-      return isOwner(userId)
-        && request.resource.data.uid == resource.data.uid
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.role == expectedUserRole()
-        && request.resource.data.status == resource.data.status
-        && request.resource.data.note == resource.data.note
-        && request.resource.data.keys().hasOnly([
-          'uid', 'email', 'displayName', 'providerId', 'role', 'status',
-          'phone', 'address', 'gender', 'birthday', 'note',
-          'createdAt', 'lastLoginAt', 'updatedAt', 'tags'
-        ]);
+    function canManageUsers() {
+      return isSuperAdmin() || isAdmin();
     }
 
-    function validUserMerchantUpdate() {
-      return canWriteUsers()
-        && request.resource.data.uid == resource.data.uid
-        && request.resource.data.email == resource.data.email
-        && request.resource.data.providerId == resource.data.providerId
-        && request.resource.data.role == resource.data.role
-        && request.resource.data.address == resource.data.address
-        && request.resource.data.gender == resource.data.gender
-        && request.resource.data.birthday == resource.data.birthday
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.lastLoginAt == resource.data.lastLoginAt
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'displayName', 'phone', 'status', 'note', 'tags', 'updatedAt'
-        ]);
+    function canManagePermissions() {
+      return isSuperAdmin() || isAdmin();
+    }
+
+    function canManageProducts() {
+      return isSuperAdmin() || isAdmin() || isStaff();
+    }
+
+    function canManagePages() {
+      return isSuperAdmin() || isAdmin() || isStaff();
+    }
+
+    function canReadSales() {
+      return isSuperAdmin() || isAdmin();
+    }
+
+    function validInvite(token, role) {
+      return token is string
+        && exists(invitePath(token))
+        && get(invitePath(token)).data.email == request.auth.token.email
+        && get(invitePath(token)).data.used == false
+        && get(invitePath(token)).data.status == "pending"
+        && get(invitePath(token)).data.role == role;
     }
 
     function validUserCreate(userId) {
       return isOwner(userId)
         && request.resource.data.uid == userId
-        && request.resource.data.role == expectedUserRole()
-        && request.resource.data.status == 'active';
+        && request.resource.data.status == "active"
+        && request.resource.data.keys().hasOnly([
+          "uid", "email", "displayName", "providerId", "role", "status",
+          "phone", "address", "gender", "birthday", "note", "tags",
+          "createdAt", "lastLoginAt", "updatedAt", "inviteToken"
+        ])
+        && (
+          request.resource.data.role == "customer"
+          || (legacyMerchantActive() && request.resource.data.role == "super_admin")
+          || validInvite(request.resource.data.inviteToken, request.resource.data.role)
+        );
+    }
+
+    function validUserSelfUpdate(userId) {
+      return isOwner(userId)
+        && isActiveUser()
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.note == resource.data.note
+        && request.resource.data.keys().hasOnly([
+          "uid", "email", "displayName", "providerId", "role", "status",
+          "phone", "address", "gender", "birthday", "note", "tags",
+          "createdAt", "lastLoginAt", "updatedAt", "inviteToken"
+        ]);
+    }
+
+    function validInviteUserUpdate(userId) {
+      return isOwner(userId)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.status == "active"
+        && validInvite(request.resource.data.inviteToken, request.resource.data.role)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "email", "displayName", "providerId", "role", "status", "inviteToken", "updatedAt"
+        ]);
+    }
+
+    function validAdminUserUpdate() {
+      return canManageUsers()
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.providerId == resource.data.providerId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "displayName", "phone", "status", "note", "tags", "updatedAt"
+        ]);
+    }
+
+    function validPermissionUpdate() {
+      return canManagePermissions()
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.providerId == resource.data.providerId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "role", "status", "updatedAt"
+        ])
+        && (
+          isSuperAdmin()
+          || (
+            isAdmin()
+            && !(resource.data.role in ["super_admin", "admin"])
+            && request.resource.data.role in ["staff", "customer"]
+          )
+        );
+    }
+
+    function validInviteCreate(token) {
+      return canManageUsers()
+        && request.resource.data.token == token
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.used == false
+        && request.resource.data.status == "pending"
+        && request.resource.data.email is string
+        && (
+          (isSuperAdmin() && request.resource.data.role in ["admin", "staff"])
+          || (isAdmin() && request.resource.data.role == "staff")
+        )
+        && request.resource.data.keys().hasOnly([
+          "email", "role", "token", "createdBy", "createdAt", "used", "status"
+        ]);
+    }
+
+    function validInviteUse(token) {
+      return isSignedIn()
+        && resource.data.token == token
+        && resource.data.email == request.auth.token.email
+        && resource.data.used == false
+        && resource.data.status == "pending"
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.token == resource.data.token
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.used == true
+        && request.resource.data.status == "used"
+        && request.resource.data.usedBy == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "used", "status", "usedBy", "usedAt"
+        ]);
     }
 
     function validOrderOwnerRead() {
       return isSignedIn()
         && (
-          resource.data.userId == request.auth.uid
+          resource.data.customerUid == request.auth.uid
+          || resource.data.userId == request.auth.uid
           || (
             request.auth.token.email != null
             && resource.data.customerEmail == request.auth.token.email
@@ -109,25 +209,25 @@ service cloud.firestore {
     }
 
     function validOrderMerchantUpdate() {
-      return isMerchant()
+      return canReadSales()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'merchantNote', 'updatedAt'
+          "status", "merchantNote", "updatedAt"
         ]);
     }
 
     match /products/{productId} {
-      allow read: if resource.data.isActive == true || isMerchant();
-      allow create, update, delete: if canWriteProducts();
+      allow read: if resource.data.isActive == true || canAccessDashboard();
+      allow create, update, delete: if canManageProducts();
     }
 
     match /categories/{categoryId} {
       allow read: if true;
-      allow create, update, delete: if canWriteProducts();
+      allow create, update, delete: if canManageProducts();
     }
 
     match /siteContent/{docId} {
       allow read: if true;
-      allow create, update, delete: if canWritePages();
+      allow create, update, delete: if canManagePages();
     }
 
     match /merchantRoles/{userId} {
@@ -136,19 +236,27 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || canReadUsers();
+      allow read: if isOwner(userId) || canManageUsers();
       allow create: if validUserCreate(userId);
-      allow update: if validUserSelfUpdate(userId) || validUserMerchantUpdate();
+      allow update: if validUserSelfUpdate(userId) || validInviteUserUpdate(userId) || validAdminUserUpdate() || validPermissionUpdate();
       allow delete: if false;
 
       match /cart/{itemId} {
-        allow read, create, update, delete: if isOwner(userId);
+        allow read, create, update, delete: if isOwner(userId) && isActiveUser();
       }
     }
 
+    match /userInvites/{token} {
+      allow read: if canManageUsers()
+        || (resource.data.used == false && resource.data.status == "pending");
+      allow create: if validInviteCreate(token);
+      allow update: if validInviteUse(token);
+      allow delete: if false;
+    }
+
     match /orders/{orderId} {
-      allow read: if validOrderOwnerRead() || canReadOrders();
-      allow create, delete: if isMerchant();
+      allow read: if validOrderOwnerRead() || canReadSales();
+      allow create, delete: if canReadSales();
       allow update: if validOrderMerchantUpdate();
     }
 

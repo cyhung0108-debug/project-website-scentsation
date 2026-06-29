@@ -204,7 +204,7 @@
 
 .merchant-stat-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -240,6 +240,49 @@
 
 .merchant-data-message[data-type="error"] {
   color: #a12f2f;
+}
+
+.merchant-invite-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 180px auto;
+  gap: 10px;
+  align-items: end;
+  margin: 0 0 14px;
+}
+
+.merchant-invite-form label {
+  display: grid;
+  gap: 6px;
+  color: #70675c;
+  font-size: 13px;
+}
+
+.merchant-invite-form input,
+.merchant-invite-form select,
+.merchant-permission-actions select {
+  min-height: 36px;
+  border: 1px solid #d8d4cc;
+  padding: 0 10px;
+  background: #fff;
+  color: #302e2f;
+  font: inherit;
+}
+
+.merchant-invite-result {
+  margin: 0 0 14px;
+  color: #70675c;
+  overflow-wrap: anywhere;
+}
+
+.merchant-invite-result:empty {
+  display: none;
+}
+
+.merchant-permission-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 .merchant-table-wrap {
@@ -317,6 +360,10 @@
   }
 
   .merchant-stat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .merchant-invite-form {
     grid-template-columns: 1fr;
   }
 }
@@ -2116,18 +2163,19 @@ h6 {
 }
 
 .profile-page {
-  width: min(1200px, calc(100% - (var(--page-gutter) * 2)));
+  width: min(1080px, calc(100% - (var(--page-gutter) * 2)));
   margin: 0 auto;
   padding: 32px 0 72px;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 28px;
+  grid-template-columns: 176px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
 }
 
 .profile-sidebar {
   border: 1px solid #d8d4cc;
   background: #fff;
-  padding: 18px;
+  padding: 14px;
   align-self: start;
 }
 
@@ -2161,9 +2209,14 @@ h6 {
 }
 
 .profile-panel {
+  display: none;
   border: 1px solid #d8d4cc;
   background: #fff;
   padding: 20px;
+}
+
+.profile-panel.is-active {
+  display: block;
 }
 
 .profile-summary {
