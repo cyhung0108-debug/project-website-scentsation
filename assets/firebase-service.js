@@ -52,7 +52,10 @@
       const data = { id: snapshot.id, ...snapshot.data() };
       return {
         ...data,
-        tags: Array.isArray(data.tags) ? data.tags : [],
+        address: String(data.address || ""),
+        gender: String(data.gender || ""),
+        birthday: String(data.birthday || ""),
+        note: String(data.note || ""),
         createdAt: normalizeTimestamp(data.createdAt),
         lastLoginAt: normalizeTimestamp(data.lastLoginAt),
         updatedAt: normalizeTimestamp(data.updatedAt)
@@ -62,16 +65,18 @@
     function normalizeMerchantRole(snapshot) {
       if (!snapshot.exists()) return null;
       const data = snapshot.data() || {};
+      const hasExplicitPermissions = data.permissions && typeof data.permissions === "object";
+      const legacyFullAccess = data.role === "merchant" && data.active === true && !hasExplicitPermissions;
       return {
         id: snapshot.id,
         role: data.role || "",
         active: data.active === true,
         permissions: {
-          usersRead: data.permissions?.usersRead === true,
-          usersWrite: data.permissions?.usersWrite === true,
-          ordersRead: data.permissions?.ordersRead === true,
-          productsWrite: data.permissions?.productsWrite === true,
-          pagesWrite: data.permissions?.pagesWrite === true
+          usersRead: legacyFullAccess || data.permissions?.usersRead === true,
+          usersWrite: legacyFullAccess || data.permissions?.usersWrite === true,
+          ordersRead: legacyFullAccess || data.permissions?.ordersRead === true,
+          productsWrite: legacyFullAccess || data.permissions?.productsWrite === true,
+          pagesWrite: legacyFullAccess || data.permissions?.pagesWrite === true
         }
       };
     }
@@ -123,6 +128,9 @@
         payload.createdAt = now;
         payload.status = "active";
         payload.phone = "";
+        payload.address = "";
+        payload.gender = "";
+        payload.birthday = "";
         payload.note = "";
         payload.tags = [];
       }
@@ -134,19 +142,47 @@
       const uid = String(userId || "").trim();
       if (!uid) throw new Error("缺少用戶 UID。");
       const allowed = {};
-      if ("displayName" in updates) allowed.displayName = String(updates.displayName || "").trim();
-      if ("phone" in updates) allowed.phone = String(updates.phone || "").trim();
-      if ("status" in updates) allowed.status = updates.status === "blocked" ? "blocked" : "active";
       if ("note" in updates) allowed.note = String(updates.note || "").trim();
-      if ("tags" in updates) {
-        allowed.tags = (Array.isArray(updates.tags) ? updates.tags : String(updates.tags || "").split(/[\n,]/))
-          .map((tag) => String(tag || "").trim())
-          .filter(Boolean)
-          .filter((tag, index, list) => list.indexOf(tag) === index);
-      }
       allowed.updatedAt = firestoreSdk.serverTimestamp();
       await firestoreSdk.setDoc(firestoreSdk.doc(db, "users", uid), allowed, { merge: true });
       return { id: uid, ...allowed };
+    }
+
+    async function updateCurrentUserProfile(updates) {
+      const user = auth.currentUser;
+      if (!user?.uid) throw new Error("目前尚未登入。");
+      const uid = String(user.uid);
+      const allowed = {};
+      const nextDisplayName = "displayName" in updates ? String(updates.displayName || "").trim() : null;
+      if (nextDisplayName !== null) allowed.displayName = nextDisplayName;
+      if ("phone" in updates) allowed.phone = String(updates.phone || "").trim();
+      if ("address" in updates) allowed.address = String(updates.address || "").trim();
+      if ("gender" in updates) allowed.gender = String(updates.gender || "").trim();
+      if ("birthday" in updates) allowed.birthday = String(updates.birthday || "").trim();
+      allowed.updatedAt = firestoreSdk.serverTimestamp();
+      if (nextDisplayName !== null) {
+        await authSdk.updateProfile(user, { displayName: nextDisplayName });
+      }
+      await firestoreSdk.setDoc(firestoreSdk.doc(db, "users", uid), allowed, { merge: true });
+      return { id: uid, ...allowed };
+    }
+
+    async function updateCurrentUserEmail(newEmail) {
+      const user = auth.currentUser;
+      const email = String(newEmail || "").trim();
+      if (!user?.uid) throw new Error("目前尚未登入。");
+      if (!email) throw new Error("請輸入電郵地址。");
+      await authSdk.updateEmail(user, email);
+      await firestoreSdk.setDoc(
+        firestoreSdk.doc(db, "users", String(user.uid)),
+        {
+          email,
+          providerId: userProviderId(auth.currentUser || user),
+          updatedAt: firestoreSdk.serverTimestamp()
+        },
+        { merge: true }
+      );
+      return email;
     }
 
     function listenUsers(callback, onError) {
@@ -174,6 +210,80 @@
           .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))),
         onError
       );
+    }
+
+    function mergeOrderSnapshots(callback) {
+      return (snapshots) => {
+        const merged = new Map();
+        snapshots.forEach((snapshot) => {
+          snapshot.docs.forEach((docSnapshot) => {
+            merged.set(docSnapshot.id, normalizeOrderRecord(docSnapshot));
+          });
+        });
+        callback(Array.from(merged.values()).sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))));
+      };
+    }
+
+    function combineOrderListeners(listeners) {
+      return () => {
+        listeners.forEach((unsubscribe) => {
+          try {
+            unsubscribe?.();
+          } catch (error) {
+            console.warn("Unable to stop order listener.", error);
+          }
+        });
+      };
+    }
+
+    function listenCurrentUserOrders(userId, email, callback, onError) {
+      const listeners = [];
+      const snapshots = [];
+      const emit = mergeOrderSnapshots(callback);
+      if (userId) {
+        const queryByCustomerUid = firestoreSdk.query(
+          firestoreSdk.collection(db, "orders"),
+          firestoreSdk.where("customerUid", "==", String(userId))
+        );
+        listeners.push(firestoreSdk.onSnapshot(queryByCustomerUid, (snapshot) => {
+          snapshots[0] = snapshot;
+          emit(snapshots.filter(Boolean));
+        }, onError));
+        const queryByUser = firestoreSdk.query(
+          firestoreSdk.collection(db, "orders"),
+          firestoreSdk.where("userId", "==", String(userId))
+        );
+        listeners.push(firestoreSdk.onSnapshot(queryByUser, (snapshot) => {
+          snapshots[1] = snapshot;
+          emit(snapshots.filter(Boolean));
+        }, onError));
+      }
+      if (email) {
+        const queryByEmail = firestoreSdk.query(
+          firestoreSdk.collection(db, "orders"),
+          firestoreSdk.where("customerEmail", "==", String(email))
+        );
+        listeners.push(firestoreSdk.onSnapshot(queryByEmail, (snapshot) => {
+          snapshots[2] = snapshot;
+          emit(snapshots.filter(Boolean));
+        }, onError));
+      }
+      return combineOrderListeners(listeners);
+    }
+
+    function listenOrdersByCustomer(userId, email, callback, onError) {
+      return listenCurrentUserOrders(userId, email, callback, onError);
+    }
+
+    async function updateOrder(orderId, updates) {
+      const normalizedId = String(orderId || "").trim();
+      if (!normalizedId) throw new Error("請提供訂單編號。");
+      const allowed = {};
+      if ("status" in updates) allowed.status = String(updates.status || "").trim() || "pending";
+      if ("merchantNote" in updates) allowed.merchantNote = String(updates.merchantNote || "").trim();
+      allowed.updatedAt = firestoreSdk.serverTimestamp();
+      await firestoreSdk.setDoc(firestoreSdk.doc(db, "orders", normalizedId), allowed, { merge: true });
+      return { id: normalizedId, ...allowed };
     }
 
     async function getActiveProducts() {
@@ -312,9 +422,14 @@
       getUserProfile,
       upsertCurrentUserProfile,
       updateUserProfile,
+      updateCurrentUserProfile,
+      updateCurrentUserEmail,
       listenUsers,
       listenUserProfile,
       listenOrders,
+      listenCurrentUserOrders,
+      listenOrdersByCustomer,
+      updateOrder,
       uploadProductImage,
       deleteProductImage,
       isManagedStorageUrl

@@ -9,6 +9,8 @@
   let editingUserId = null;
   let deletingProductId = null;
   let deletingProductImages = [];
+  let customerOrdersUnsub = null;
+  let editingUserOrders = [];
   let editorCategoryAssignments = [];
   let editorImages = [];
   let removedImageUrls = [];
@@ -56,11 +58,11 @@
   }
 
   function storefrontPreviewUrl() {
-    return `${rootPrefix()}index.html?storePreview=guest`;
+    return `${rootPrefix()}index.html?preview=store`;
   }
 
   function isStorePreviewGuest() {
-    return new URLSearchParams(window.location.search).get("storePreview") === "guest";
+    return new URLSearchParams(window.location.search).get("preview") === "store";
   }
 
   function isMerchantAreaPage() {
@@ -183,19 +185,19 @@
     if (!container) return;
     document.title = "\u5546\u6236\u5f8c\u53f0 - APOTHEKE";
     const sections = [
-      hasPermission("usersRead") ? { id: "users", label: "\u7528\u6236\u7ba1\u7406" } : null,
-      hasPermission("ordersRead") ? { id: "sales", label: "\u92b7\u552e\u7ba1\u7406" } : null,
-      hasPermission("productsWrite") ? { id: "products", label: "\u7522\u54c1\u7ba1\u7406" } : null,
-      hasPermission("pagesWrite") ? { id: "site", label: "\u7db2\u9801\u7ba1\u7406" } : null
-    ].filter(Boolean);
-    const activeSection = sections[0]?.id || "none";
-    const navHtml = sections.length
-      ? sections.map((section) => `<button class="${section.id === activeSection ? "is-active" : ""}" type="button" data-merchant-section="${section.id}">${section.label}</button>`).join("")
-      : '<p class="merchant-dashboard__empty-nav">此商戶暫時沒有可用功能。</p>';
+      { id: "users", label: "\u7528\u6236\u7ba1\u7406" },
+      { id: "sales", label: "\u92b7\u552e\u7ba1\u7406" },
+      { id: "products", label: "\u7522\u54c1\u7ba1\u7406" },
+      { id: "site", label: "\u7db2\u9801\u7ba1\u7406" }
+    ];
+    const activeSection = "users";
+    const navHtml = sections
+      .map((section) => `<button class="${section.id === activeSection ? "is-active" : ""}" type="button" data-merchant-section="${section.id}">${section.label}</button>`)
+      .join("");
     container.innerHTML = `
       <section class="merchant-dashboard">
         <aside class="merchant-dashboard__sidebar" aria-label="\u5546\u6236\u5f8c\u53f0\u5c0e\u89bd">
-          <a class="merchant-dashboard__brand" href="${storefrontPreviewUrl()}" target="_blank" rel="noopener noreferrer">APOTHEKE</a>
+          <a class="merchant-dashboard__brand" href="${storefrontPreviewUrl()}" target="_blank" rel="noopener noreferrer" data-open-store-preview>APOTHEKE</a>
           <nav>${navHtml}</nav>
           <div class="merchant-dashboard__account">${escapeHtml(user.displayName || user.email || "\u5546\u6236\u5e33\u865f")}</div>
           <button class="merchant-dashboard__logout" type="button" data-merchant-dashboard-logout>\u767b\u51fa</button>
@@ -267,7 +269,7 @@
     table.innerHTML = `
       <table class="merchant-data-table">
         <thead>
-          <tr><th>電郵</th><th>顯示名稱</th><th>角色</th><th>狀態</th><th>電話</th><th>備註</th><th>建立時間</th><th>最後登入時間</th>${hasPermission("usersWrite") ? "<th>操作</th>" : ""}</tr>
+          <tr><th>電郵</th><th>顯示名稱</th><th>角色</th><th>狀態</th><th>最後登入時間</th>${hasPermission("usersWrite") || hasPermission("ordersRead") ? "<th>操作</th>" : ""}</tr>
         </thead>
         <tbody>
           ${currentUsers.map((user) => `
@@ -276,11 +278,8 @@
               <td>${escapeHtml(user.displayName || "未有名稱")}</td>
               <td>${user.role === "merchant" ? "商戶" : "顧客"}</td>
               <td>${user.status === "blocked" ? "已封鎖" : "正常"}</td>
-              <td>${escapeHtml(user.phone || "")}</td>
-              <td>${escapeHtml(user.note || "")}</td>
-              <td>${escapeHtml(formatDateTime(user.createdAt))}</td>
               <td>${escapeHtml(formatDateTime(user.lastLoginAt))}</td>
-              ${hasPermission("usersWrite") ? `<td><button class="merchant-table-action" type="button" data-edit-user="${escapeHtml(user.uid || user.id)}">修改</button></td>` : ""}
+              ${hasPermission("usersWrite") || hasPermission("ordersRead") ? `<td><button class="merchant-table-action" type="button" data-edit-user="${escapeHtml(user.uid || user.id)}">修改</button></td>` : ""}
             </tr>
           `).join("")}
         </tbody>
@@ -293,7 +292,7 @@
     if (!message) return;
     message.dataset.type = "error";
     message.textContent = error?.code === "permission-denied"
-      ? "目前 Firestore Rules 未允許商戶讀取全部 users。請按回報中的步驟更新 Rules。"
+      ? "目前 Firestore Rules 未允許商戶讀取 users collection。請按回報中的步驟更新 Firestore Rules。"
       : merchantErrorMessage(error, "無法讀取用戶資料。");
     if (table) table.innerHTML = "";
   }
@@ -302,31 +301,94 @@
     return currentUsers.find((user) => String(user.uid || user.id) === String(userId)) || null;
   }
 
+  function renderUserOrdersEditor() {
+    const container = document.querySelector("[data-user-order-list]");
+    if (!container) return;
+    if (!editingUserOrders.length) {
+      container.innerHTML = '<p class="merchant-user-orders__empty">暫時沒有訂單資料。</p>';
+      return;
+    }
+    container.innerHTML = editingUserOrders.map((order) => `
+      <article class="merchant-user-order-card" data-user-order-id="${escapeHtml(order.id)}">
+        <div class="merchant-user-order-card__head">
+          <strong>${escapeHtml(order.orderNumber || order.id)}</strong>
+          <span>${escapeHtml(formatDateTime(order.createdAt))}</span>
+        </div>
+        <div class="merchant-user-order-card__grid">
+          <label>狀態
+            <select name="orderStatus" data-order-status="${escapeHtml(order.id)}" ${hasPermission("ordersRead") ? "" : "disabled"}>
+              ${["pending", "paid", "processing", "shipped", "completed", "cancelled"].map((status) => `
+                <option value="${status}" ${order.status === status ? "selected" : ""}>${escapeHtml(orderStatusLabel(status))}</option>
+              `).join("")}
+            </select>
+          </label>
+          <div class="merchant-user-order-card__amount">
+            <span>金額</span>
+            <strong>${formatDashboardPrice(orderAmount(order))}</strong>
+          </div>
+        </div>
+        <label>商戶備註
+          <textarea rows="3" data-order-note="${escapeHtml(order.id)}" ${hasPermission("ordersRead") ? "" : "disabled"}>${escapeHtml(order.merchantNote || "")}</textarea>
+        </label>
+      </article>
+    `).join("");
+  }
+
   function userEditorForm(user) {
-    const tags = Array.isArray(user.tags) ? user.tags.join("\n") : "";
     return `
       <h2 id="merchantUserTitle">修改用戶資料</h2>
       <form class="merchant-form merchant-user-form" data-merchant-user-form>
-        <p class="merchant-user-readonly">電郵：${escapeHtml(user.email || "未有電郵")}</p>
-        <p class="merchant-user-readonly">UID：${escapeHtml(user.uid || user.id)}</p>
-        <label>顯示名稱<input type="text" name="displayName" value="${escapeHtml(user.displayName || "")}"></label>
-        <label>電話<input type="text" name="phone" value="${escapeHtml(user.phone || "")}"></label>
-        <label>狀態<select name="status"><option value="active" ${user.status !== "blocked" ? "selected" : ""}>active</option><option value="blocked" ${user.status === "blocked" ? "selected" : ""}>blocked</option></select></label>
-        <label>備註<textarea name="note" rows="4">${escapeHtml(user.note || "")}</textarea></label>
-        <label>標籤<textarea name="tags" rows="3" placeholder="每行一個標籤">${escapeHtml(tags)}</textarea></label>
+        <div class="merchant-user-readonly-grid">
+          <p class="merchant-user-readonly">電郵：${escapeHtml(user.email || "未有電郵")}</p>
+          <p class="merchant-user-readonly">UID：${escapeHtml(user.uid || user.id)}</p>
+          <p class="merchant-user-readonly">顯示名稱：${escapeHtml(user.displayName || "未設定")}</p>
+          <p class="merchant-user-readonly">角色：${escapeHtml(user.role === "merchant" ? "商戶" : "顧客")}</p>
+          <p class="merchant-user-readonly">狀態：${escapeHtml(user.status === "blocked" ? "已封鎖" : "正常")}</p>
+          <p class="merchant-user-readonly">電話：${escapeHtml(user.phone || "未設定")}</p>
+          <p class="merchant-user-readonly merchant-user-readonly--wide">地址：${escapeHtml(user.address || "未設定")}</p>
+        </div>
+        <label>備註<textarea name="note" rows="4" ${hasPermission("usersWrite") ? "" : "disabled"}>${escapeHtml(user.note || "")}</textarea></label>
+        <section class="merchant-user-orders">
+          <h3>歷史訂單</h3>
+          <div class="merchant-user-orders__list" data-user-order-list></div>
+        </section>
         <p class="merchant-message" data-merchant-user-message aria-live="polite"></p>
-        <div class="merchant-modal__actions"><button class="merchant-secondary-button" type="button" data-close-merchant-modal>取消</button><button class="merchant-primary-button" type="submit" data-save-user>儲存</button></div>
+        <div class="merchant-modal__actions"><button class="merchant-secondary-button" type="button" data-close-merchant-modal>取消</button><button class="merchant-primary-button" type="submit" data-save-user>${hasPermission("usersWrite") || hasPermission("ordersRead") ? "儲存" : "關閉"}</button></div>
       </form>`;
   }
 
-  function openUserEditor(userId) {
-    if (!hasPermission("usersWrite")) return showMerchantToast("你沒有修改用戶資料的權限。");
+  async function openUserEditor(userId) {
+    if (!hasPermission("usersWrite") && !hasPermission("ordersRead")) return showMerchantToast("你沒有查看用戶資料的權限。");
     const user = editableUserById(userId);
     if (!user) return showMerchantToast("找不到此用戶。");
     editingUserId = String(user.uid || user.id);
+    editingUserOrders = [];
     ensureMerchantModals();
     document.querySelector("[data-merchant-user-content]").innerHTML = userEditorForm(user);
+    renderUserOrdersEditor();
     openModal(document.querySelector("#merchantUserModal"));
+    try {
+      const firebase = await firebaseService();
+      if (customerOrdersUnsub) {
+        customerOrdersUnsub();
+        customerOrdersUnsub = null;
+      }
+      customerOrdersUnsub = firebase.listenOrdersByCustomer?.(
+        user.uid || user.id,
+        user.email || "",
+        (orders) => {
+          editingUserOrders = Array.isArray(orders) ? orders : [];
+          renderUserOrdersEditor();
+        },
+        (error) => {
+          editingUserOrders = [];
+          renderUserOrdersEditor();
+          setUserEditorError(merchantErrorMessage(error, "無法讀取此用戶的訂單資料。"));
+        }
+      );
+    } catch (error) {
+      setUserEditorError(merchantErrorMessage(error, "無法讀取此用戶的訂單資料。"));
+    }
   }
 
   function setUserEditorError(message) {
@@ -337,20 +399,26 @@
   }
 
   async function saveUserForm(form) {
-    if (!editingUserId || !hasPermission("usersWrite")) return setUserEditorError("你沒有修改用戶資料的權限。");
+    if (!editingUserId) return setUserEditorError("找不到此用戶。");
+    if (!hasPermission("usersWrite") && !hasPermission("ordersRead")) return setUserEditorError("你沒有修改用戶資料的權限。");
     const data = new FormData(form);
     const button = form.querySelector("[data-save-user]");
     button.disabled = true;
     button.textContent = "儲存中…";
     try {
       const firebase = await firebaseService();
-      await firebase.updateUserProfile(editingUserId, {
-        displayName: data.get("displayName"),
-        phone: data.get("phone"),
-        status: data.get("status"),
-        note: data.get("note"),
-        tags: data.get("tags")
-      });
+      if (hasPermission("usersWrite")) {
+        await firebase.updateUserProfile(editingUserId, {
+          note: data.get("note")
+        });
+      }
+      if (hasPermission("ordersRead")) {
+        const orderUpdates = editingUserOrders.map((order) => firebase.updateOrder(order.id, {
+          status: form.querySelector(`[data-order-status="${CSS.escape(order.id)}"]`)?.value || order.status,
+          merchantNote: form.querySelector(`[data-order-note="${CSS.escape(order.id)}"]`)?.value || ""
+        }));
+        await Promise.all(orderUpdates);
+      }
       closeMerchantModals();
       showMerchantToast("用戶資料已更新");
     } catch (error) {
@@ -428,9 +496,13 @@
     }
     if (hasPermission("usersRead") && firebase.listenUsers) {
       dashboardUnsubscribers.push(firebase.listenUsers(renderUsers, renderUsersError));
+    } else {
+      renderUsers([]);
     }
     if (hasPermission("ordersRead") && firebase.listenOrders) {
       dashboardUnsubscribers.push(firebase.listenOrders(renderOrders, renderOrdersError));
+    } else {
+      renderOrders([]);
     }
   }
   function cleanupProductImages(urls) {
@@ -535,6 +607,11 @@
   }
 
   function closeMerchantModals() {
+    if (customerOrdersUnsub) {
+      customerOrdersUnsub();
+      customerOrdersUnsub = null;
+    }
+    editingUserOrders = [];
     document.querySelectorAll(".merchant-modal.is-open").forEach((modal) => {
       modal.classList.remove("is-open");
       modal.setAttribute("aria-hidden", "true");
@@ -951,6 +1028,12 @@
   });
 
   document.addEventListener("click", async (event) => {
+    const previewTrigger = event.target.closest("[data-open-store-preview]");
+    if (previewTrigger) {
+      event.preventDefault();
+      window.open(storefrontPreviewUrl(), "_blank", "noopener");
+      return;
+    }
     if (event.target.closest("[data-merchant-dashboard-logout]")) return handleMerchantLogout();
     const sectionButton = event.target.closest("[data-merchant-section]");
     if (sectionButton) {

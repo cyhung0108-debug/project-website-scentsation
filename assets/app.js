@@ -14,13 +14,17 @@
     authRedirect: "",
     authTab: "email",
     authBusy: false,
+    authPendingAction: "",
     currentUser: null,
+    currentUserProfile: null,
+    currentUserOrders: [],
     priceMin: 0,
     priceMax: 0,
     priceLimit: 0,
     sort: "relevant"
   };
   let currentUserProfileUnsub = null;
+  let currentUserOrdersUnsub = null;
   const AUTH_NOTICE_KEY = "onlineShopAuthNotice";
 
   const $ = (selector, scope = document) => scope.querySelector(selector);
@@ -28,6 +32,19 @@
 
   function formatPrice(price) {
     return `${currencyConfig.symbol || "HK$"}${Number(price || 0).toFixed(2)}`;
+  }
+
+  function formatDateTime(value) {
+    if (!value) return "未有資料";
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString("zh-HK", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
   }
 
   function renderCurrencyText() {
@@ -75,8 +92,19 @@
     return `${rootPrefix()}merchant-dashboard.html`;
   }
 
+  function profileUrl(tab = "profile") {
+    const normalizedTab = ["profile", "orders", "security"].includes(tab) ? tab : "profile";
+    return `${rootPrefix()}profile.html?tab=${encodeURIComponent(normalizedTab)}`;
+  }
+
+  function getProfileTabFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const tab = String(params.get("tab") || "profile").trim();
+    return ["profile", "orders", "security"].includes(tab) ? tab : "profile";
+  }
+
   function isStorePreviewGuest() {
-    return new URLSearchParams(window.location.search).get("storePreview") === "guest";
+    return new URLSearchParams(window.location.search).get("preview") === "store";
   }
 
   function initAuthEntryFromUrl() {
@@ -276,12 +304,20 @@
 
   function setCurrentUserFromFirebase(user) {
     state.currentUser = isStorePreviewGuest() ? null : user || null;
-    if (!state.currentUser) closeAccountMenu();
+    if (!state.currentUser) {
+      state.currentUserProfile = null;
+      state.currentUserOrders = [];
+      closeAccountMenu();
+    }
     updateAuthNav();
   }
 
   function currentUserLabel(user = state.currentUser) {
     return user?.displayName || user?.email || "會員";
+  }
+
+  function currentUserLabel(user = state.currentUser) {
+    return state.currentUserProfile?.displayName || user?.displayName || user?.email || "使用者";
   }
 
   function updateAuthNav() {
@@ -318,6 +354,8 @@
     menu.innerHTML = `
       <p>已登入</p>
       <strong>${escapeHtml(currentUserLabel())}</strong>
+      <a href="${profileUrl("profile")}">個人資料</a>
+      <a href="${profileUrl("orders")}">訂單記錄</a>
       <button type="button" data-auth-logout>登出</button>
     `;
     menu.style.top = `${Math.round(rect.bottom + 12)}px`;
@@ -374,6 +412,7 @@
     if (!state.authBusy) updateAuthSubmitState();
   }
 
+
   async function initFirebaseAuth() {
     try {
       const firebase = await getFirebaseService();
@@ -383,75 +422,117 @@
           currentUserProfileUnsub();
           currentUserProfileUnsub = null;
         }
+        if (currentUserOrdersUnsub) {
+          currentUserOrdersUnsub();
+          currentUserOrdersUnsub = null;
+        }
         if (!user) {
+          state.currentUserProfile = null;
+          state.currentUserOrders = [];
           setCurrentUserFromFirebase(null);
+          renderProfilePage();
           if (state.authEntryRequested) {
             state.authEntryRequested = false;
             openAuthModal("login");
           }
           return;
         }
+
         let merchantRole = null;
+        let profile = null;
         try {
           merchantRole = await firebase.getMerchantRole?.(user.uid);
           await firebase.upsertCurrentUserProfile?.(user, merchantRole);
+          profile = await firebase.getUserProfile?.(user.uid);
         } catch (error) {
-          console.warn("無法同步用戶基本資料。", error);
+          console.warn("\u540c\u6b65\u6703\u54e1\u8cc7\u6599\u5931\u6557\u3002", error);
         }
-        try {
-          const profile = await firebase.getUserProfile?.(user.uid);
-          if (profile?.status === "blocked" && profile?.role !== "merchant") {
-            queueAuthNotice("你的帳號已被封鎖，請聯絡商戶。");
-            await firebase.signOut(firebase.auth);
-            setCurrentUserFromFirebase(null);
-            window.location.replace(homeUrl());
-            return;
-          }
-        } catch (error) {
-          console.warn("無法讀取用戶狀態。", error);
-        }
-        setCurrentUserFromFirebase(normalizedUser);
-        currentUserProfileUnsub = firebase.listenUserProfile?.(user.uid, async (profile) => {
-          if (!profile || profile.role === "merchant" || profile.status !== "blocked") return;
-          queueAuthNotice("你的帳號已被封鎖，請聯絡商戶。");
+
+        if (profile?.status === "blocked" && profile?.role !== "merchant") {
+          state.authPendingAction = "";
+          queueAuthNotice("\u767b\u5165\u5931\u6557 \u60a8\u7684\u8cec\u865f\u5df2\u88ab\u5c01\u9396");
           try {
             await firebase.signOut(firebase.auth);
           } catch (error) {
-            console.warn("無法登出已封鎖帳號。", error);
+            console.warn("\u5c01\u9396\u5e33\u6236\u81ea\u52d5\u767b\u51fa\u5931\u6557\u3002", error);
           }
+          state.currentUserProfile = null;
+          state.currentUserOrders = [];
           setCurrentUserFromFirebase(null);
+          renderProfilePage();
+          window.location.replace(homeUrl());
+          return;
+        }
+
+        state.currentUserProfile = profile || null;
+        setCurrentUserFromFirebase(normalizedUser);
+
+        currentUserProfileUnsub = firebase.listenUserProfile?.(user.uid, async (nextProfile) => {
+          state.currentUserProfile = nextProfile || null;
+          renderProfilePage();
+          if (!nextProfile || nextProfile.role === "merchant" || nextProfile.status !== "blocked") return;
+          state.authPendingAction = "";
+          queueAuthNotice("\u767b\u5165\u5931\u6557 \u60a8\u7684\u8cec\u865f\u5df2\u88ab\u5c01\u9396");
+          try {
+            await firebase.signOut(firebase.auth);
+          } catch (error) {
+            console.warn("\u5c01\u9396\u5e33\u6236\u5373\u6642\u767b\u51fa\u5931\u6557\u3002", error);
+          }
+          state.currentUserProfile = null;
+          state.currentUserOrders = [];
+          setCurrentUserFromFirebase(null);
+          renderProfilePage();
           window.location.replace(homeUrl());
         });
+
         if (normalizedUser && state.authRedirect === "merchant-dashboard" && merchantRole?.active === true && merchantRole.role === "merchant") {
           state.authRedirect = "";
+          if (state.authPendingAction) {
+            state.authPendingAction = "";
+            closeAuthModal();
+          }
           window.location.replace(merchantDashboardUrl());
           return;
         }
-        return;
-        if (user) {
-          firebase.upsertCurrentUserProfile?.(user).catch((error) => {
-            console.warn("無法同步用戶基本資料。", error);
-          });
+
+        if (document.body?.dataset.page === "profile" && merchantRole?.active === true && merchantRole.role === "merchant") {
+          window.location.replace(merchantDashboardUrl());
+          return;
         }
-        if (user && normalizedUser && state.authRedirect === "merchant-dashboard") {
-          firebase.getMerchantRole?.(user.uid)
-            .then((role) => {
-              if (role?.active === true && role.role === "merchant") {
-                state.authRedirect = "";
-                window.location.replace(merchantDashboardUrl());
-              }
-            })
-            .catch((error) => {
-              console.warn("無法讀取商戶權限。", error);
-            });
+
+        if (normalizedUser && state.authRedirect === "profile") {
+          state.authRedirect = "";
+          closeAuthModal();
+          window.location.replace(profileUrl("profile"));
+          return;
         }
-        if (!normalizedUser && state.authEntryRequested) {
-          state.authEntryRequested = false;
-          openAuthModal("login");
+
+        if (document.body?.dataset.page === "profile") {
+          currentUserOrdersUnsub = firebase.listenCurrentUserOrders?.(
+            user.uid,
+            user.email || "",
+            (orders) => {
+              state.currentUserOrders = Array.isArray(orders) ? orders : [];
+              renderProfilePage();
+            },
+            () => {
+              state.currentUserOrders = [];
+              renderProfilePage();
+            }
+          );
         }
+
+        if (state.authPendingAction) {
+          const pendingAction = state.authPendingAction;
+          state.authPendingAction = "";
+          closeAuthModal();
+          showToast(pendingAction === "register" ? "\u8a3b\u518a\u6210\u529f\uff0c\u5df2\u70ba\u4f60\u767b\u5165\u3002" : "\u767b\u5165\u6210\u529f\u3002");
+        }
+
+        renderProfilePage();
       });
     } catch (error) {
-      console.error("Firebase Authentication 初始化失敗：", error);
+      console.error("Firebase Authentication \u521d\u59cb\u5316\u5931\u6557\u3002", error);
       setCurrentUserFromFirebase(null);
     }
   }
@@ -560,18 +641,18 @@
     const email = $(".auth-field-email")?.value.trim();
     const password = $(".auth-field-password")?.value;
     const confirmPassword = $(".auth-field-confirm")?.value;
-    if (!email || !password || !confirmPassword) return setAuthMessage("請填寫電郵、密碼和確認密碼。", "error");
+    if (!email || !password || !confirmPassword) return setAuthMessage("請完整填寫電郵、密碼及確認密碼。", "error");
     if (password !== confirmPassword) return setAuthMessage("兩次輸入的密碼不一致。", "error");
-    if (password.length < 6) return setAuthMessage("密碼至少需要 6 個字元。", "error");
+    if (password.length < 6) return setAuthMessage("密碼長度至少需要 6 個字元。", "error");
 
     setAuthBusy(true);
+    state.authPendingAction = "register";
     setAuthMessage("正在建立帳戶…");
     try {
       const firebase = await getFirebaseService();
       await firebase.createUserWithEmailAndPassword(firebase.auth, email, password);
-      closeAuthModal();
-      showToast("註冊成功，已為你登入。");
     } catch (error) {
+      state.authPendingAction = "";
       setAuthMessage(firebaseAuthMessage(error), "error");
     } finally {
       setAuthBusy(false);
@@ -581,16 +662,16 @@
   async function handleLogin() {
     const email = $(".auth-field-email")?.value.trim();
     const password = $(".auth-field-password")?.value;
-    if (!email || !password) return setAuthMessage("請填寫電郵和密碼。", "error");
+    if (!email || !password) return setAuthMessage("請輸入電郵及密碼。", "error");
 
     setAuthBusy(true);
+    state.authPendingAction = "login";
     setAuthMessage("正在登入…");
     try {
       const firebase = await getFirebaseService();
       await firebase.signInWithEmailAndPassword(firebase.auth, email, password);
-      closeAuthModal();
-      showToast("登入成功。");
     } catch (error) {
+      state.authPendingAction = "";
       setAuthMessage(firebaseAuthMessage(error), "error");
     } finally {
       setAuthBusy(false);
@@ -599,13 +680,13 @@
 
   async function handleGoogleAuth() {
     setAuthBusy(true);
-    setAuthMessage("正在開啟 Google 登入…");
+    state.authPendingAction = "google";
+    setAuthMessage("正在啟動 Google 登入…");
     try {
       const firebase = await getFirebaseService();
       await firebase.signInWithPopup(firebase.auth, firebase.googleProvider);
-      closeAuthModal();
-      showToast("Google 登入成功。");
     } catch (error) {
+      state.authPendingAction = "";
       setAuthMessage(firebaseAuthMessage(error), "error");
     } finally {
       setAuthBusy(false);
@@ -637,6 +718,40 @@
     } catch (error) {
       closeAccountMenu();
       showToast(firebaseAuthMessage(error));
+    }
+  }
+
+  function setProfileSettingsMessage(message, type = "info") {
+    const node = $("[data-profile-settings-message]");
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.type = type;
+  }
+
+  async function handleProfileSettingsSubmit(form) {
+    if (!state.currentUser) return;
+    const data = new FormData(form);
+    const nextEmail = String(data.get("email") || "").trim();
+    const currentEmail = String(state.currentUserProfile?.email || state.currentUser?.email || "").trim();
+    const saveButton = form.querySelector("[data-profile-save]");
+    if (saveButton) saveButton.disabled = true;
+    setProfileSettingsMessage("正在儲存個人資料…");
+    try {
+      const firebase = await getFirebaseService();
+      if (nextEmail && nextEmail !== currentEmail) {
+        await firebase.updateCurrentUserEmail?.(nextEmail);
+      }
+      await firebase.updateCurrentUserProfile?.({
+        displayName: data.get("displayName"),
+        phone: data.get("phone"),
+        address: data.get("address")
+      });
+      setProfileSettingsMessage("個人資料已更新。", "success");
+      showToast("個人資料已更新");
+    } catch (error) {
+      setProfileSettingsMessage(firebaseAuthMessage(error), "error");
+    } finally {
+      if (saveButton) saveButton.disabled = false;
     }
   }
 
@@ -1083,6 +1198,122 @@
               ? `<iframe src="${escapeHtml(mapUrl)}" loading="lazy" allowfullscreen referrerpolicy="no-referrer-when-downgrade" title="Google Map"></iframe>`
               : `<div class="map-placeholder">請在後台設定 Google Map 連結</div>`}
           </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function profileOrderAmount(order) {
+    return Number(order?.totalAmount || order?.total || order?.amount || 0);
+  }
+
+  function profileOrderStatus(order) {
+    const labels = {
+      pending: "待處理",
+      paid: "已付款",
+      processing: "處理中",
+      shipped: "已出貨",
+      completed: "已完成",
+      cancelled: "已取消"
+    };
+    return labels[order?.status] || order?.status || "未有狀態";
+  }
+
+  function renderProfilePage() {
+    const container = $("[data-profile-page]");
+    if (!container) return;
+
+    const currentUser = state.currentUser;
+    const profile = state.currentUserProfile || {};
+    const currentTab = getProfileTabFromUrl();
+    const providerId = String(profile.providerId || currentUser?.providerId || "password");
+    const providerLabel = providerId === "google.com" ? "Google" : providerId === "password" ? "電郵 / 密碼" : providerId;
+    document.title = "個人資料 - APOTHEKE";
+
+    if (!currentUser) {
+      container.innerHTML = `
+        <section class="profile-page profile-page--empty">
+          <div class="profile-empty">
+            <h1>個人資料</h1>
+            <p>請先登入後再查看你的帳戶資料。</p>
+          </div>
+        </section>
+      `;
+      return;
+    }
+
+    const orders = Array.isArray(state.currentUserOrders) ? state.currentUserOrders : [];
+    const emailValue = profile.email || currentUser.email || "";
+
+    container.innerHTML = `
+      <section class="profile-page">
+        <aside class="profile-sidebar" aria-label="帳戶導覽">
+          <h1>我的帳戶</h1>
+          <nav class="profile-nav">
+            <a class="${currentTab === "profile" ? "is-active" : ""}" href="${profileUrl("profile")}">個人資料</a>
+            <a class="${currentTab === "orders" ? "is-active" : ""}" href="${profileUrl("orders")}">訂單記錄</a>
+            <a class="${currentTab === "security" ? "is-active" : ""}" href="${profileUrl("security")}">帳戶安全</a>
+          </nav>
+        </aside>
+        <div class="profile-content">
+          <section class="profile-panel ${currentTab === "profile" ? "is-active" : ""}">
+            <h2>個人資料</h2>
+            <form class="profile-settings-form" data-profile-settings-form>
+              <label>電郵<input type="email" name="email" value="${escapeHtml(emailValue)}"></label>
+              <label>顯示名稱<input type="text" name="displayName" value="${escapeHtml(profile.displayName || "")}"></label>
+              <label>電話<input type="text" name="phone" value="${escapeHtml(profile.phone || "")}"></label>
+              <label class="profile-settings-form__wide">地址<textarea name="address" rows="4">${escapeHtml(profile.address || "")}</textarea></label>
+              <p class="profile-settings-form__message" data-profile-settings-message aria-live="polite"></p>
+              <div class="profile-settings-form__actions">
+                <button class="checkout-button" type="submit" data-profile-save>儲存個人資料</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="profile-panel ${currentTab === "orders" ? "is-active" : ""}">
+            <h2>訂單記錄</h2>
+            ${orders.length ? `
+              <div class="profile-orders">
+                ${orders.map((order) => `
+                  <article class="profile-order-card">
+                    <div>
+                      <span>訂單編號</span>
+                      <strong>${escapeHtml(order.orderNumber || order.id || "未有訂單編號")}</strong>
+                    </div>
+                    <div>
+                      <span>狀態</span>
+                      <strong>${escapeHtml(profileOrderStatus(order))}</strong>
+                    </div>
+                    <div>
+                      <span>金額</span>
+                      <strong>${escapeHtml(formatPrice(profileOrderAmount(order)))}</strong>
+                    </div>
+                    <div>
+                      <span>建立時間</span>
+                      <strong>${escapeHtml(formatDateTime(order.createdAt))}</strong>
+                    </div>
+                    <div class="profile-order-card__note">
+                      <span>商戶備註</span>
+                      <p>${escapeHtml(order.merchantNote || "未有備註")}</p>
+                    </div>
+                  </article>
+                `).join("")}
+              </div>
+            ` : `<p class="profile-empty-message">暫時沒有訂單</p>`}
+          </section>
+
+          <section class="profile-panel ${currentTab === "security" ? "is-active" : ""}">
+            <h2>帳戶安全</h2>
+            <div class="profile-security">
+              <article class="profile-security__card">
+                <span>目前登入方式</span>
+                <strong>${escapeHtml(providerLabel)}</strong>
+              </article>
+              <div class="profile-settings-form__actions">
+                <button class="checkout-button" type="button" data-auth-logout>登出</button>
+              </div>
+            </div>
+          </section>
         </div>
       </section>
     `;
@@ -1652,6 +1883,13 @@
     }
   });
 
+  document.addEventListener("submit", async (event) => {
+    const profileForm = event.target.closest("[data-profile-settings-form]");
+    if (!profileForm) return;
+    event.preventDefault();
+    await handleProfileSettingsSubmit(profileForm);
+  });
+
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       closeAuthModal();
@@ -1682,6 +1920,7 @@
   window.applyFilters = applyFilters;
   window.renderProductGrid = renderProductGrid;
   window.renderHomePage = renderHomePage;
+  window.renderProfilePage = renderProfilePage;
   window.renderPolicyPage = renderPolicyPage;
   window.renderSiteFooter = renderSiteFooter;
   window.openSearchModal = openSearchModal;
@@ -1714,6 +1953,7 @@
   renderFilterPanel();
   renderProductGrid();
   renderHomePage();
+  renderProfilePage();
   renderProductDetail();
   renderAboutPage();
   renderContactPage();

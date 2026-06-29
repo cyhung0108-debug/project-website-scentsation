@@ -21,24 +21,98 @@ service cloud.firestore {
         && get(merchantRolePath()).data.active == true;
     }
 
+    function usesLegacyMerchantAccess() {
+      return isMerchant()
+        && !(get(merchantRolePath()).data.permissions is map);
+    }
+
     function canReadUsers() {
       return isMerchant()
-        && get(merchantRolePath()).data.permissions.usersRead == true;
+        && (usesLegacyMerchantAccess()
+          || get(merchantRolePath()).data.permissions.usersRead == true);
     }
 
     function canWriteUsers() {
       return isMerchant()
-        && get(merchantRolePath()).data.permissions.usersWrite == true;
+        && (usesLegacyMerchantAccess()
+          || get(merchantRolePath()).data.permissions.usersWrite == true);
     }
 
     function canReadOrders() {
       return isMerchant()
-        && get(merchantRolePath()).data.permissions.ordersRead == true;
+        && (usesLegacyMerchantAccess()
+          || get(merchantRolePath()).data.permissions.ordersRead == true);
     }
 
     function canWriteProducts() {
       return isMerchant()
-        && get(merchantRolePath()).data.permissions.productsWrite == true;
+        && (usesLegacyMerchantAccess()
+          || get(merchantRolePath()).data.permissions.productsWrite == true);
+    }
+
+    function canWritePages() {
+      return isMerchant()
+        && (usesLegacyMerchantAccess()
+          || get(merchantRolePath()).data.permissions.pagesWrite == true);
+    }
+
+    function expectedUserRole() {
+      return isMerchant() ? "merchant" : "customer";
+    }
+
+    function validUserSelfUpdate(userId) {
+      return isOwner(userId)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.role == expectedUserRole()
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.note == resource.data.note
+        && request.resource.data.keys().hasOnly([
+          'uid', 'email', 'displayName', 'providerId', 'role', 'status',
+          'phone', 'address', 'gender', 'birthday', 'note',
+          'createdAt', 'lastLoginAt', 'updatedAt', 'tags'
+        ]);
+    }
+
+    function validUserMerchantUpdate() {
+      return canWriteUsers()
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.providerId == resource.data.providerId
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.address == resource.data.address
+        && request.resource.data.gender == resource.data.gender
+        && request.resource.data.birthday == resource.data.birthday
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.lastLoginAt == resource.data.lastLoginAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'phone', 'status', 'note', 'tags', 'updatedAt'
+        ]);
+    }
+
+    function validUserCreate(userId) {
+      return isOwner(userId)
+        && request.resource.data.uid == userId
+        && request.resource.data.role == expectedUserRole()
+        && request.resource.data.status == 'active';
+    }
+
+    function validOrderOwnerRead() {
+      return isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || (
+            request.auth.token.email != null
+            && resource.data.customerEmail == request.auth.token.email
+          )
+        );
+    }
+
+    function validOrderMerchantUpdate() {
+      return isMerchant()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'merchantNote', 'updatedAt'
+        ]);
     }
 
     match /products/{productId} {
@@ -51,6 +125,11 @@ service cloud.firestore {
       allow create, update, delete: if canWriteProducts();
     }
 
+    match /siteContent/{docId} {
+      allow read: if true;
+      allow create, update, delete: if canWritePages();
+    }
+
     match /merchantRoles/{userId} {
       allow read: if isOwner(userId);
       allow write: if false;
@@ -58,8 +137,8 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isOwner(userId) || canReadUsers();
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId) || canWriteUsers();
+      allow create: if validUserCreate(userId);
+      allow update: if validUserSelfUpdate(userId) || validUserMerchantUpdate();
       allow delete: if false;
 
       match /cart/{itemId} {
@@ -68,9 +147,9 @@ service cloud.firestore {
     }
 
     match /orders/{orderId} {
-      allow read: if isSignedIn()
-        && (resource.data.userId == request.auth.uid || canReadOrders());
-      allow create, update, delete: if isMerchant();
+      allow read: if validOrderOwnerRead() || canReadOrders();
+      allow create, delete: if isMerchant();
+      allow update: if validOrderMerchantUpdate();
     }
 
     match /{document=**} {
