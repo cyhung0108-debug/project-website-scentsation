@@ -34,6 +34,14 @@
       return firestoreSdk.doc(db, "categories", String(categoryId || ""));
     }
 
+    function siteContentDocument(pageId) {
+      return firestoreSdk.doc(db, "siteContent", String(pageId || ""));
+    }
+
+    function merchantRoleDocument(uid) {
+      return firestoreSdk.doc(db, "merchantRoles", String(uid || ""));
+    }
+
     function snapshotData(snapshot) {
       return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
     }
@@ -85,6 +93,26 @@
       await firestoreSdk.deleteDoc(productDocument(productId));
     }
 
+    async function getSiteContent(pageId) {
+      return snapshotData(await firestoreSdk.getDoc(siteContentDocument(pageId)));
+    }
+
+    async function saveSiteContent(pageId, data) {
+      const page = String(pageId || "").trim();
+      const payload = {
+        ...data,
+        type: String(data?.type || "homeHero"),
+        updatedAt: firestoreSdk.serverTimestamp(),
+        updatedBy: auth.currentUser?.uid || ""
+      };
+      await firestoreSdk.setDoc(siteContentDocument(page), payload, { merge: true });
+      return { id: page, ...data, type: payload.type, updatedBy: payload.updatedBy };
+    }
+
+    async function getMerchantRole(uid) {
+      return snapshotData(await firestoreSdk.getDoc(merchantRoleDocument(uid)));
+    }
+
     async function commitOperations(operations) {
       for (let index = 0; index < operations.length; index += 400) {
         const batch = firestoreSdk.writeBatch(db);
@@ -132,6 +160,21 @@
       return storageSdk.getDownloadURL(imageRef);
     }
 
+    async function uploadSiteContentImage(pageId, file) {
+      const page = safeFilename(pageId || "home");
+      const uniqueName = `${Date.now()}-${crypto.randomUUID()}-${safeFilename(file.name)}`;
+      const imagePath = `site-content/${page}/${uniqueName}`;
+      const imageRef = storageSdk.ref(storage, imagePath);
+      await storageSdk.uploadBytes(imageRef, file, {
+        contentType: file.type,
+        customMetadata: { pageId: page, purpose: "siteContent" }
+      });
+      return {
+        url: await storageSdk.getDownloadURL(imageRef),
+        path: imagePath
+      };
+    }
+
     function isManagedStorageUrl(url) {
       const value = String(url || "");
       return value.includes("firebasestorage.googleapis.com")
@@ -169,8 +212,12 @@
       saveProduct,
       updateProductFields,
       deleteProduct,
+      getSiteContent,
+      saveSiteContent,
+      getMerchantRole,
       saveCategoryChanges,
       uploadProductImage,
+      uploadSiteContentImage,
       deleteProductImage,
       isManagedStorageUrl
     };

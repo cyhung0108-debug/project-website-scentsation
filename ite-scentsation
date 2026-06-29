@@ -1,0 +1,15 @@
+warning: in the working copy of 'assets/app.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/firebase-service.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/merchant.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/site-config.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'assets/styles.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'firestore.rules', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'storage.rules', LF will be replaced by CRLF the next time Git touches it
+ assets/app.js              |  96 [32m+++++++++[m[31m-[m
+ assets/firebase-service.js |  47 [32m+++++[m
+ assets/merchant.js         | 462 [32m++++++++++++++++++++++++++++++++++++++++++++[m[31m-[m
+ assets/site-config.js      |   4 [32m+[m
+ assets/styles.css          | 207 [32m++++++++++++++++++++[m
+ firestore.rules            |  60 [32m++++++[m
+ storage.rules              |  10 [32m+[m
+ 7 files changed, 881 insertions(+), 5 deletions(-)

@@ -5,6 +5,10 @@ window.ONLINE_SHOP_SITE_CONFIG = {
     freeShippingThreshold: 3000
   },
   home: {
+    heroTitle: "APOTHEKE",
+    heroSubtitle: "Fragrance for quiet everyday rituals.",
+    heroButtonText: "Shop now",
+    heroButtonHref: "collections/home-fragrance/",
     bannerImage: "assets/images/banner.jpg",
     bannerAlt: "APOTHEKE 店舖門面",
     productsTitle: "熱門商品",

@@ -18,6 +18,85 @@ service cloud.firestore {
         );
     }
 
+    function merchantRoleData() {
+      return get(/databases/$(database)/documents/merchantRoles/$(request.auth.uid)).data;
+    }
+
+    function hasPageEditorRole(roleData) {
+      return (
+          roleData.keys().hasAll(["role"])
+          && roleData.role in ["merchant", "admin", "super_admin"]
+        )
+        || (
+          roleData.keys().hasAll(["roleName"])
+          && roleData.roleName in ["merchant", "admin", "super_admin"]
+        );
+    }
+
+    function hasPageWritePermission(roleData) {
+      return (
+          roleData.keys().hasAll(["permissions"])
+          && roleData.permissions is map
+          && roleData.permissions.pagesWrite == true
+        )
+        || (
+          roleData.keys().hasAll(["pagesWrite"])
+          && roleData.pagesWrite == true
+        );
+    }
+
+    function canWritePages() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/merchantRoles/$(request.auth.uid))
+        && merchantRoleData().active == true
+        && hasPageEditorRole(merchantRoleData())
+        && hasPageWritePermission(merchantRoleData());
+    }
+
+    function canWriteSiteContent() {
+      return isMerchant() || canWritePages();
+    }
+
+    function isHomeHeroPayload(data) {
+      return data.keys().hasOnly([
+          "type",
+          "title",
+          "subtitle",
+          "imageUrl",
+          "imagePath",
+          "imageAlt",
+          "buttonText",
+          "buttonHref",
+          "isActive",
+          "updatedAt",
+          "updatedBy"
+        ])
+        && data.type == "homeHero"
+        && data.title is string
+        && data.title.size() <= 120
+        && data.subtitle is string
+        && data.subtitle.size() <= 280
+        && data.imageUrl is string
+        && data.imageUrl.size() <= 2000
+        && data.imagePath is string
+        && data.imagePath.size() <= 500
+        && data.imageAlt is string
+        && data.imageAlt.size() <= 160
+        && data.buttonText is string
+        && data.buttonText.size() <= 60
+        && data.buttonHref is string
+        && data.buttonHref.size() <= 500
+        && data.isActive is bool
+        && data.updatedAt is timestamp
+        && data.updatedBy is string
+        && data.updatedBy == request.auth.uid;
+    }
+
+    match /merchantRoles/{userId} {
+      allow read: if isOwner(userId) || isMerchant();
+      allow create, update, delete: if false;
+    }
+
     match /products/{productId} {
       allow read: if resource.data.isActive == true || isMerchant();
       allow create, update, delete: if isMerchant();
@@ -40,6 +119,14 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && (resource.data.userId == request.auth.uid || isMerchant());
       allow create, update, delete: if isMerchant();
+    }
+
+    match /siteContent/{docId} {
+      allow read: if true;
+      allow create, update: if docId == "home"
+        && canWriteSiteContent()
+        && isHomeHeroPayload(request.resource.data);
+      allow delete: if false;
     }
 
     match /{document=**} {

@@ -15,6 +15,8 @@
     authTab: "email",
     authBusy: false,
     currentUser: null,
+    homeHero: null,
+    homeHeroLoadStarted: false,
     priceMin: 0,
     priceMax: 0,
     priceLimit: 0,
@@ -36,6 +38,65 @@
 
   function rootPrefix() {
     return document.body?.dataset.rootPrefix || "";
+  }
+
+  function isAbsoluteOrRootUrl(value) {
+    return /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(String(value || "").trim());
+  }
+
+  function resolveAssetUrl(value) {
+    const url = String(value || "").trim();
+    if (!url) return "";
+    return isAbsoluteOrRootUrl(url) ? url : `${rootPrefix()}${url}`;
+  }
+
+  function resolveLinkUrl(value) {
+    const href = String(value || "").trim();
+    if (!href || /^javascript:/i.test(href)) return "";
+    if (href.startsWith("#") || isAbsoluteOrRootUrl(href)) return href;
+    return `${rootPrefix()}${href}`;
+  }
+
+  function fallbackHomeHero(home = siteConfig.home || {}) {
+    return {
+      type: "homeHero",
+      title: String(home.heroTitle || ""),
+      subtitle: String(home.heroSubtitle || ""),
+      imageUrl: String(home.bannerImage || "assets/images/banner.jpg"),
+      imagePath: "",
+      imageAlt: String(home.heroImageAlt || home.bannerAlt || "APOTHEKE"),
+      buttonText: String(home.heroButtonText || ""),
+      buttonHref: String(home.heroButtonHref || ""),
+      isActive: home.heroIsActive !== false
+    };
+  }
+
+  function normalizeRemoteHomeHero(data) {
+    if (!data || data.type !== "homeHero" || typeof data.isActive !== "boolean") return null;
+    const stringFields = ["title", "subtitle", "imageUrl", "imagePath", "imageAlt", "buttonText", "buttonHref"];
+    if (!stringFields.every((field) => typeof data[field] === "string")) return null;
+    return {
+      type: "homeHero",
+      title: data.title,
+      subtitle: data.subtitle,
+      imageUrl: data.imageUrl,
+      imagePath: data.imagePath,
+      imageAlt: data.imageAlt,
+      buttonText: data.buttonText,
+      buttonHref: data.buttonHref,
+      isActive: data.isActive
+    };
+  }
+
+  function currentHomeHero(home = siteConfig.home || {}) {
+    const fallback = fallbackHomeHero(home);
+    if (!state.homeHero) return fallback;
+    return {
+      ...fallback,
+      ...state.homeHero,
+      imageUrl: state.homeHero.imageUrl || fallback.imageUrl,
+      imageAlt: state.homeHero.imageAlt || fallback.imageAlt
+    };
   }
 
   function productUrl(productId) {
@@ -1032,17 +1093,43 @@
     const home = siteConfig.home || {};
     const maxProducts = Math.max(1, Number.parseInt(home.maxProducts, 10) || 8);
     const featuredProducts = products.filter((product) => product.showOnHome === true).slice(0, maxProducts);
-    const bannerImage = `${rootPrefix()}${home.bannerImage || "assets/images/banner.jpg"}`;
+    const hero = currentHomeHero(home);
+    const heroImage = resolveAssetUrl(hero.imageUrl);
+    const heroHref = resolveLinkUrl(hero.buttonHref);
+    const heroHasCopy = Boolean(hero.title || hero.subtitle || (hero.buttonText && heroHref));
     container.innerHTML = `
-      <section class="home-banner" aria-label="${escapeHtml(home.bannerAlt || "店舖 Banner")}">
-        <img src="${escapeHtml(bannerImage)}" alt="${escapeHtml(home.bannerAlt || "APOTHEKE 店舖")}">
-      </section>
+      ${hero.isActive ? `
+        <section class="home-banner home-hero" aria-label="${escapeHtml(hero.imageAlt || home.bannerAlt || "店舖 Banner")}">
+          ${heroImage ? `<img class="home-hero__image" src="${escapeHtml(heroImage)}" alt="${escapeHtml(hero.imageAlt || "APOTHEKE 店舖")}">` : ""}
+          ${heroHasCopy ? `
+            <div class="home-hero__content">
+              ${hero.title ? `<h1>${escapeHtml(hero.title)}</h1>` : ""}
+              ${hero.subtitle ? `<p>${textToHtml(hero.subtitle)}</p>` : ""}
+              ${hero.buttonText && heroHref ? `<a class="home-hero__button" href="${escapeHtml(heroHref)}">${escapeHtml(hero.buttonText)}</a>` : ""}
+            </div>
+          ` : ""}
+        </section>
+      ` : ""}
       <section class="home-products" aria-labelledby="homeProductsTitle">
         <h1 id="homeProductsTitle">${escapeHtml(home.productsTitle || "熱門商品")}</h1>
         <div class="product-grid home-products__grid" data-home-products-grid aria-label="首頁推薦商品"></div>
       </section>
     `;
     renderProductGrid(featuredProducts, $("[data-home-products-grid]", container), "暫時沒有推薦商品");
+  }
+
+  async function loadHomeHeroContent() {
+    if (state.homeHeroLoadStarted || !document.querySelector("[data-home-page]")) return;
+    state.homeHeroLoadStarted = true;
+    try {
+      const firebase = await getFirebaseService();
+      const content = normalizeRemoteHomeHero(await firebase.getSiteContent("home"));
+      if (!content) return;
+      state.homeHero = content;
+      renderHomePage();
+    } catch (error) {
+      console.warn("Home hero content load failed; using site-config fallback.", error);
+    }
   }
 
   function renderSiteFooter() {
@@ -1634,6 +1721,7 @@
   renderFilterPanel();
   renderProductGrid();
   renderHomePage();
+  loadHomeHeroContent();
   renderProductDetail();
   renderAboutPage();
   renderContactPage();

@@ -18,6 +18,23 @@
   let categoryDraft = [];
   let originalCategoryIds = [];
   let categorySortables = [];
+  let currentMerchantRole = null;
+  let currentMerchantRoleLoaded = false;
+  let currentMerchantRoleLoading = false;
+  let currentMerchantRoleError = null;
+  let merchantRoleRequest = null;
+  let homeHeroDraft = null;
+  let homeHeroLoading = false;
+  let homeHeroSaving = false;
+  let homeHeroUploading = false;
+  let activeHomeHeroFieldId = null;
+  let suppressHomeHeroFocusActivation = false;
+
+  const HOME_HERO_FIELD_TO_PREVIEW_FIELD = {
+    "homeHero.imageAlt": "homeHero.imageUrl",
+    "homeHero.buttonHref": "homeHero.buttonText",
+    "homeHero.isActive": "homeHero"
+  };
 
   window.merchantUids = merchantUids;
 
@@ -38,12 +55,148 @@
     return uniqueStrings(String(value || "").split(/\r?\n/));
   }
 
+  function resetMerchantRoleState() {
+    currentMerchantRole = null;
+    currentMerchantRoleLoaded = false;
+    currentMerchantRoleLoading = false;
+    currentMerchantRoleError = null;
+    merchantRoleRequest = null;
+  }
+
   function isAllowedMerchant(user) {
     return MERCHANT_UID_SET.has(String(user?.uid || "").trim());
   }
 
   function rootPrefix() {
     return document.body?.dataset.rootPrefix || "";
+  }
+
+  function isAbsoluteOrRootUrl(value) {
+    return /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(String(value || "").trim());
+  }
+
+  function resolvePreviewUrl(value) {
+    const url = String(value || "").trim();
+    if (!url) return "";
+    return isAbsoluteOrRootUrl(url) ? url : `${rootPrefix()}${url}`;
+  }
+
+  function findDataAttribute(root, attribute, value) {
+    return Array.from(root.querySelectorAll(`[${attribute}]`))
+      .find((node) => node.getAttribute(attribute) === value) || null;
+  }
+
+  function previewFieldForHomeHeroField(fieldId) {
+    return HOME_HERO_FIELD_TO_PREVIEW_FIELD[fieldId] || fieldId;
+  }
+
+  function findHomeHeroPreviewTarget(fieldId) {
+    const previewRoot = findDataAttribute(document, "data-preview-id", "homeHero");
+    if (!previewRoot) return null;
+    const previewFieldId = previewFieldForHomeHeroField(fieldId);
+    if (previewFieldId === "homeHero") return previewRoot;
+    return findDataAttribute(previewRoot, "data-preview-field", previewFieldId);
+  }
+
+  function findHomeHeroEditorTarget(fieldId) {
+    const form = document.querySelector("[data-home-hero-form]");
+    if (!form) return null;
+    return findDataAttribute(form, "data-editor-field", fieldId);
+  }
+
+  function clearHomeHeroVisualSelection() {
+    document
+      .querySelectorAll('[data-preview-id="homeHero"].is-visual-edit-active, [data-preview-id="homeHero"] .is-visual-edit-active, [data-home-hero-form] .is-visual-edit-active')
+      .forEach((node) => node.classList.remove("is-visual-edit-active"));
+  }
+
+  function applyHomeHeroVisualSelection() {
+    clearHomeHeroVisualSelection();
+    if (!activeHomeHeroFieldId) return;
+    const previewTarget = findHomeHeroPreviewTarget(activeHomeHeroFieldId);
+    const editorTarget = findHomeHeroEditorTarget(activeHomeHeroFieldId);
+    if (previewTarget) previewTarget.classList.add("is-visual-edit-active");
+    if (editorTarget) editorTarget.classList.add("is-visual-edit-active");
+  }
+
+  function activateHomeHeroField(fieldId, source) {
+    if (!fieldId) return;
+    activeHomeHeroFieldId = fieldId;
+    applyHomeHeroVisualSelection();
+
+    const previewTarget = findHomeHeroPreviewTarget(fieldId);
+    const editorTarget = findHomeHeroEditorTarget(fieldId);
+
+    if (source === "editor" && previewTarget) {
+      previewTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    }
+
+    if (source === "preview" && editorTarget) {
+      editorTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      const focusTarget = editorTarget.matches("input, textarea, button")
+        ? editorTarget
+        : editorTarget.querySelector("input, textarea, button");
+      if (focusTarget) {
+        suppressHomeHeroFocusActivation = true;
+        focusTarget.focus({ preventScroll: true });
+        window.setTimeout(() => {
+          suppressHomeHeroFocusActivation = false;
+        }, 0);
+      }
+    }
+  }
+
+  function fallbackHomeHero() {
+    const home = window.ONLINE_SHOP_SITE_CONFIG?.home || {};
+    return {
+      type: "homeHero",
+      title: String(home.heroTitle || ""),
+      subtitle: String(home.heroSubtitle || ""),
+      imageUrl: String(home.bannerImage || "assets/images/banner.jpg"),
+      imagePath: "",
+      imageAlt: String(home.heroImageAlt || home.bannerAlt || "APOTHEKE"),
+      buttonText: String(home.heroButtonText || ""),
+      buttonHref: String(home.heroButtonHref || ""),
+      isActive: home.heroIsActive !== false
+    };
+  }
+
+  function normalizeHomeHero(data) {
+    const fallback = fallbackHomeHero();
+    if (!data || data.type !== "homeHero") return fallback;
+    return {
+      type: "homeHero",
+      title: String(data.title ?? fallback.title),
+      subtitle: String(data.subtitle ?? fallback.subtitle),
+      imageUrl: String(data.imageUrl ?? fallback.imageUrl),
+      imagePath: String(data.imagePath ?? ""),
+      imageAlt: String(data.imageAlt ?? fallback.imageAlt),
+      buttonText: String(data.buttonText ?? fallback.buttonText),
+      buttonHref: String(data.buttonHref ?? fallback.buttonHref),
+      isActive: typeof data.isActive === "boolean" ? data.isActive : fallback.isActive
+    };
+  }
+
+  function hasRolePagesWrite(roleData = currentMerchantRole) {
+    const permissions = roleData?.permissions || {};
+    const role = String(roleData?.role || roleData?.roleName || "").trim();
+    const pagesWrite = permissions.pagesWrite === true || roleData?.pagesWrite === true;
+    return roleData?.active === true
+      && ["merchant", "admin", "super_admin"].includes(role)
+      && pagesWrite;
+  }
+
+  function pageContentPermissionMessage() {
+    if (currentMerchantRoleLoading || !currentMerchantRoleLoaded) return "Checking page content permissions...";
+    if (currentMerchantRoleError) return "你目前沒有權限執行這個操作。";
+    if (!hasRolePagesWrite()) return "pagesWrite permission is not enabled for this account.";
+    return "";
+  }
+
+  function canEditPageContent() {
+    if (!currentMerchant || !isAllowedMerchant(currentMerchant)) return false;
+    if (currentMerchantRoleLoading || !currentMerchantRoleLoaded) return false;
+    return hasRolePagesWrite();
   }
 
   function merchantDashboardUrl() {
@@ -131,6 +284,7 @@
           <nav>
             <button type="button" data-merchant-section="users">\u7528\u6236\u7ba1\u7406</button>
             <button type="button" data-merchant-section="sales">\u92b7\u552e\u7ba1\u7406</button>
+            <button type="button" data-merchant-section="pages">\u9801\u9762\u5167\u5bb9</button>
             <button class="is-active" type="button" data-merchant-section="products">\u7522\u54c1\u7ba1\u7406</button>
           </nav>
           <div class="merchant-dashboard__account">${escapeHtml(user.displayName || user.email || "\u5546\u6236\u5e33\u865f")}</div>
@@ -144,6 +298,9 @@
           <section class="merchant-dashboard-section" data-merchant-panel="sales">
             <h1>\u92b7\u552e\u7ba1\u7406</h1>
             <p>\u9019\u88e1\u6703\u653e\u8a02\u55ae\u3001\u4ed8\u6b3e\u3001\u51fa\u8ca8\u548c\u92b7\u552e\u5831\u8868\u3002\u6b64\u5340\u76ee\u524d\u5148\u4fdd\u7559\u57fa\u672c\u7248\u9762\u3002</p>
+          </section>
+          <section class="merchant-dashboard-section" data-merchant-panel="pages">
+            <div data-site-content-panel></div>
           </section>
           <section class="merchant-dashboard-section is-active" data-merchant-panel="products">
             <div class="merchant-page">
@@ -166,6 +323,271 @@
         </main>
       </section>`;
   }
+
+  function setSiteContentMessage(message, type = "info") {
+    const node = document.querySelector("[data-site-content-message]");
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.type = type;
+  }
+
+  function syncHomeHeroDraftFromForm(form = document.querySelector("[data-home-hero-form]")) {
+    if (!form) return homeHeroDraft || fallbackHomeHero();
+    const data = new FormData(form);
+    homeHeroDraft = {
+      ...(homeHeroDraft || fallbackHomeHero()),
+      type: "homeHero",
+      title: String(data.get("title") || "").trim(),
+      subtitle: String(data.get("subtitle") || "").trim(),
+      imageAlt: String(data.get("imageAlt") || "").trim(),
+      buttonText: String(data.get("buttonText") || "").trim(),
+      buttonHref: String(data.get("buttonHref") || "").trim(),
+      isActive: data.get("isActive") === "on"
+    };
+    return homeHeroDraft;
+  }
+
+  function renderSiteContentPanel() {
+    const panel = document.querySelector("[data-site-content-panel]");
+    if (!panel) return;
+    const hero = homeHeroDraft || fallbackHomeHero();
+    const imageUrl = resolvePreviewUrl(hero.imageUrl);
+    const buttonHref = hero.buttonHref ? resolvePreviewUrl(hero.buttonHref) : "#";
+    const canEdit = canEditPageContent();
+    const permissionMessage = pageContentPermissionMessage();
+    const controlsDisabled = !canEdit || homeHeroLoading || homeHeroSaving || homeHeroUploading;
+    const saveText = homeHeroSaving ? "Saving..." : "Save Home Hero";
+    const uploadText = homeHeroUploading ? "Uploading image..." : "Hero image";
+
+    panel.innerHTML = `
+      <div class="merchant-page merchant-site-content">
+        <div class="merchant-page__heading">
+          <div>
+            <p class="merchant-eyebrow">\u9801\u9762\u5167\u5bb9</p>
+            <h1>Home Hero</h1>
+          </div>
+          <a class="merchant-secondary-button merchant-site-content__preview" href="${rootPrefix()}index.html" target="_blank" rel="noopener noreferrer">Preview</a>
+        </div>
+        <section class="merchant-products-panel merchant-site-content__panel">
+          <div class="merchant-site-content__preview-frame" data-site-content-preview data-preview-id="homeHero">
+            ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(hero.imageAlt)}" data-preview-field="homeHero.imageUrl">` : `<span data-preview-field="homeHero.imageUrl">No image</span>`}
+            <div class="merchant-site-content__preview-copy">
+              ${hero.title ? `<strong data-preview-field="homeHero.title">${escapeHtml(hero.title)}</strong>` : ""}
+              ${hero.subtitle ? `<span data-preview-field="homeHero.subtitle">${escapeHtml(hero.subtitle)}</span>` : ""}
+              ${hero.buttonText ? `<a class="merchant-site-content__preview-button" href="${escapeHtml(buttonHref || "#")}" data-preview-field="homeHero.buttonText">${escapeHtml(hero.buttonText)}</a>` : ""}
+            </div>
+          </div>
+          <form class="merchant-form merchant-site-content__form" data-home-hero-form>
+            <fieldset ${controlsDisabled ? "disabled" : ""}>
+              <div class="merchant-form__row">
+                <label data-editor-field="homeHero.title">Title
+                  <input name="title" type="text" maxlength="120" value="${escapeHtml(hero.title)}">
+                </label>
+                <label data-editor-field="homeHero.buttonText">Button text
+                  <input name="buttonText" type="text" maxlength="60" value="${escapeHtml(hero.buttonText)}">
+                </label>
+              </div>
+              <label data-editor-field="homeHero.subtitle">Subtitle
+                <textarea name="subtitle" rows="3" maxlength="280">${escapeHtml(hero.subtitle)}</textarea>
+              </label>
+              <div class="merchant-form__row">
+                <label data-editor-field="homeHero.buttonHref">Button link
+                  <input name="buttonHref" type="text" maxlength="500" value="${escapeHtml(hero.buttonHref)}">
+                </label>
+                <label data-editor-field="homeHero.imageAlt">Image alt text
+                  <input name="imageAlt" type="text" maxlength="160" value="${escapeHtml(hero.imageAlt)}">
+                </label>
+              </div>
+              <label data-editor-field="homeHero.imageUrl">${uploadText}
+                <input type="file" accept="image/*" data-site-content-image-upload>
+              </label>
+              <label class="merchant-checkbox" data-editor-field="homeHero.isActive">
+                <input name="isActive" type="checkbox" ${hero.isActive ? "checked" : ""}>
+                <span>Show Home Hero</span>
+              </label>
+            </fieldset>
+            <div class="merchant-site-content__meta">
+              <span>${escapeHtml(hero.imagePath || "site-content/home/")}</span>
+            </div>
+            <p class="merchant-message" data-site-content-message aria-live="polite"></p>
+            <div class="merchant-modal__actions">
+              <button class="merchant-primary-button" type="submit" data-save-home-hero ${controlsDisabled ? "disabled" : ""}>${saveText}</button>
+            </div>
+            ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
+          </form>
+        </section>
+      </div>
+    `;
+    applyHomeHeroVisualSelection();
+
+    if (homeHeroLoading) setSiteContentMessage("Loading Home Hero...", "info");
+  }
+
+  async function loadMerchantRole(user) {
+    if (merchantRoleRequest) return merchantRoleRequest;
+    currentMerchantRole = null;
+    currentMerchantRoleLoaded = false;
+    currentMerchantRoleLoading = true;
+    currentMerchantRoleError = null;
+
+    merchantRoleRequest = (async () => {
+      try {
+        const firebase = await firebaseService();
+        const uid = String(firebase.auth?.currentUser?.uid || user?.uid || currentMerchant?.uid || "").trim();
+        if (!uid) throw new Error("Cannot find current merchant UID.");
+        currentMerchantRole = await firebase.getMerchantRole(uid);
+        currentMerchantRoleError = null;
+        return currentMerchantRole;
+      } catch (error) {
+        currentMerchantRole = null;
+        currentMerchantRoleError = error;
+        console.warn("Merchant role lookup failed.", error);
+        return null;
+      } finally {
+        currentMerchantRoleLoaded = true;
+        currentMerchantRoleLoading = false;
+        merchantRoleRequest = null;
+      }
+    })();
+
+    return merchantRoleRequest;
+  }
+
+  async function ensurePageContentPermission() {
+    const uid = String(window.onlineShopFirebase?.auth?.currentUser?.uid || currentMerchant?.uid || "").trim();
+    if (!currentMerchant || !isAllowedMerchant(currentMerchant)) {
+      console.debug({
+        action: "ensurePageContentPermission",
+        uid,
+        roleData: currentMerchantRole,
+        pagesWriteResult: false
+      });
+      return false;
+    }
+    if (!currentMerchantRoleLoaded || currentMerchantRoleLoading) {
+      renderSiteContentPanel();
+      await loadMerchantRole(currentMerchant);
+      renderSiteContentPanel();
+    }
+    const pagesWriteResult = hasRolePagesWrite();
+    console.debug({
+      action: "ensurePageContentPermission",
+      uid,
+      roleData: currentMerchantRole,
+      pagesWriteResult
+    });
+    return pagesWriteResult;
+  }
+
+  async function loadHomeHeroContent() {
+    if (!currentMerchant || !document.querySelector("[data-site-content-panel]")) return;
+    homeHeroLoading = true;
+    homeHeroDraft = homeHeroDraft || fallbackHomeHero();
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      const remoteHero = await firebase.getSiteContent("home");
+      homeHeroDraft = normalizeHomeHero(remoteHero);
+      homeHeroLoading = false;
+      renderSiteContentPanel();
+      setSiteContentMessage(remoteHero ? "Home Hero loaded." : "Using fallback Home Hero.", "success");
+    } catch (error) {
+      homeHeroLoading = false;
+      homeHeroDraft = homeHeroDraft || fallbackHomeHero();
+      renderSiteContentPanel();
+      setSiteContentMessage(merchantErrorMessage(error, "Could not load Home Hero. Using fallback content."), "error");
+    }
+  }
+
+  async function uploadHomeHeroImage(input) {
+    if (!currentMerchant) return;
+    if (!(await ensurePageContentPermission())) {
+      setSiteContentMessage("pagesWrite permission is not enabled for this account.", "error");
+      return;
+    }
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+    syncHomeHeroDraftFromForm();
+    if (!file.type.startsWith("image/")) {
+      setSiteContentMessage("Please choose an image file.", "error");
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      setSiteContentMessage("Image exceeds the 10MB limit.", "error");
+      return;
+    }
+
+    homeHeroUploading = true;
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      const uploaded = await firebase.uploadSiteContentImage("home", file);
+      homeHeroDraft = {
+        ...(homeHeroDraft || fallbackHomeHero()),
+        imageUrl: uploaded.url,
+        imagePath: uploaded.path,
+        imageAlt: homeHeroDraft?.imageAlt || file.name
+      };
+      homeHeroUploading = false;
+      renderSiteContentPanel();
+      setSiteContentMessage("Image uploaded. Save Home Hero to publish it.", "success");
+    } catch (error) {
+      homeHeroUploading = false;
+      renderSiteContentPanel();
+      const code = String(error?.code || "");
+      const message = code === "storage/unauthorized" || code === "permission-denied"
+        ? "Storage rejected the Home Hero image upload. Please check deployed storage.rules for site-content/**."
+        : "Could not upload image.";
+      setSiteContentMessage(message, "error");
+    }
+  }
+
+  async function saveHomeHeroForm(form) {
+    if (!currentMerchant) return;
+    if (!(await ensurePageContentPermission())) {
+      setSiteContentMessage("pagesWrite permission is not enabled for this account.", "error");
+      return;
+    }
+    const draft = syncHomeHeroDraftFromForm(form);
+    const payload = {
+      type: "homeHero",
+      title: draft.title,
+      subtitle: draft.subtitle,
+      imageUrl: draft.imageUrl,
+      imagePath: draft.imagePath,
+      imageAlt: draft.imageAlt,
+      buttonText: draft.buttonText,
+      buttonHref: draft.buttonHref,
+      isActive: draft.isActive
+    };
+
+    homeHeroSaving = true;
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      await firebase.saveSiteContent("home", payload);
+      homeHeroSaving = false;
+      homeHeroDraft = normalizeHomeHero(payload);
+      renderSiteContentPanel();
+      setSiteContentMessage("Home Hero saved.", "success");
+      showMerchantToast("Home Hero saved");
+    } catch (error) {
+      homeHeroSaving = false;
+      renderSiteContentPanel();
+      console.error({
+        action: "saveHomeHeroForm",
+        code: error?.code,
+        message: error?.message,
+        payload
+      });
+      const message = error?.code === "permission-denied"
+        ? "Firestore rejected the Home Hero save. Please check deployed firestore.rules for siteContent/home."
+        : "Could not save Home Hero.";
+      setSiteContentMessage(message, "error");
+    }
+  }
+
   function cleanupProductImages(urls) {
     Promise.allSettled(uniqueStrings(urls).map((url) => store.deleteProductImage(url)))
       .then((results) => {
@@ -214,6 +636,8 @@
     currentMerchant = user;
     renderMerchantDashboardShell(user);
     ensureMerchantModals();
+    renderSiteContentPanel();
+    loadHomeHeroContent();
     renderProductRows();
   }
   function ensureMerchantModals() {
@@ -604,6 +1028,9 @@
 
     if (!user) {
       currentMerchant = null;
+      resetMerchantRoleState();
+      homeHeroDraft = null;
+      activeHomeHeroFieldId = null;
       closeMerchantModals();
       if (container) window.location.replace(storefrontLoginUrl());
       return;
@@ -611,6 +1038,9 @@
 
     if (!isAllowedMerchant(user)) {
       currentMerchant = null;
+      resetMerchantRoleState();
+      homeHeroDraft = null;
+      activeHomeHeroFieldId = null;
       closeMerchantModals();
       if (container) {
         renderGate("沒有權限", `帳號 ${escapeHtml(user.email || user.uid || "")} 沒有商戶後台權限。`, `<a class="merchant-secondary-button" href="${rootPrefix()}index.html">返回首頁</a>`);
@@ -629,9 +1059,11 @@
     }
 
     if (container) {
+      if (currentMerchant?.uid !== user.uid) resetMerchantRoleState();
       currentMerchant = user;
       renderGate("正在載入後台", "請稍候…");
       try {
+        await loadMerchantRole(user);
         await store.initializeMerchantProducts();
         renderDashboard(user);
       } catch (error) {
@@ -640,6 +1072,13 @@
     }
   }
   document.addEventListener("submit", async (event) => {
+    const homeHeroForm = event.target.closest("[data-home-hero-form]");
+    if (homeHeroForm && currentMerchant) {
+      event.preventDefault();
+      await saveHomeHeroForm(homeHeroForm);
+      return;
+    }
+
     const form = event.target.closest("[data-merchant-editor-form]");
     if (!form || !currentMerchant) return;
     event.preventDefault();
@@ -650,8 +1089,27 @@
     if (event.key === "Escape" && document.querySelector(".merchant-modal.is-open")) closeMerchantModals();
   });
 
+  document.addEventListener("focusin", (event) => {
+    if (suppressHomeHeroFocusActivation) return;
+    const editorField = event.target.closest("[data-home-hero-form] [data-editor-field]");
+    if (!editorField) return;
+    activateHomeHeroField(editorField.getAttribute("data-editor-field"), "editor");
+  });
+
   document.addEventListener("click", async (event) => {
     if (event.target.closest("[data-merchant-dashboard-logout]")) return handleMerchantLogout();
+    const previewField = event.target.closest('[data-preview-id="homeHero"] [data-preview-field]');
+    if (previewField) {
+      if (event.target.closest("a, button")) event.preventDefault();
+      activateHomeHeroField(previewField.getAttribute("data-preview-field"), "preview");
+      return;
+    }
+    const editorField = event.target.closest("[data-home-hero-form] [data-editor-field]");
+    if (editorField) {
+      activateHomeHeroField(editorField.getAttribute("data-editor-field"), "editor");
+      return;
+    }
+
     const sectionButton = event.target.closest("[data-merchant-section]");
     if (sectionButton) {
       const section = sectionButton.dataset.merchantSection;
@@ -751,9 +1209,13 @@
     if (event.target.closest("[data-close-merchant-modal]")) closeMerchantModals();
   });
 
-  document.addEventListener("change", (event) => {
+  document.addEventListener("change", async (event) => {
     if (event.target.matches("[data-product-category-parent], [data-product-category-child]")) {
       updateProductCategoryAssignment(event.target);
+      return;
+    }
+    if (event.target.matches("[data-site-content-image-upload]")) {
+      await uploadHomeHeroImage(event.target);
       return;
     }
     if (!event.target.matches("[data-image-upload]")) return;
