@@ -200,6 +200,21 @@ service cloud.firestore {
         ]);
     }
 
+    function validInviteHideOrDelete(token) {
+      return canManageUsers()
+        && resource.data.token == token
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.used == resource.data.used
+        && request.resource.data.status == "deleted"
+        && request.resource.data.hidden == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status", "hidden", "deletedAt"
+        ]);
+    }
+
     function validOrderOwnerRead() {
       return isSignedIn()
         && (
@@ -254,7 +269,7 @@ service cloud.firestore {
       allow read: if canManageUsers()
         || (resource.data.used == false && resource.data.status == "pending");
       allow create: if validInviteCreate(token);
-      allow update: if validInviteUse(token);
+      allow update: if validInviteUse(token) || validInviteHideOrDelete(token);
       allow delete: if false;
     }
 

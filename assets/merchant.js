@@ -5,6 +5,7 @@
   let currentMerchant = null;
   let currentMerchantRole = null;
   let currentUsers = [];
+  let currentInvites = [];
   let editingProductId = null;
   let editingUserId = null;
   let deletingProductId = null;
@@ -20,6 +21,7 @@
   let categorySortables = [];
   let dashboardUnsubscribers = [];
   let userCreatedSort = "desc";
+  let usersSubsection = "list";
   let currentInviteLink = "";
   const BACKOFFICE_ROLES = ["super_admin", "admin", "staff"];
 
@@ -163,6 +165,23 @@
 
   function canSetUserStatus(user) {
     return canModifyUser(user);
+  }
+
+  function isVisibleUser(user) {
+    return user?.status !== "exited" && user?.hidden !== true && user?.deleted !== true;
+  }
+
+  function inviteStatusLabel(invite) {
+    if (!invite) return "未知";
+    if (invite.status === "blocked") return "已封鎖";
+    if (invite.status === "exited") return "已退出";
+    if (invite.used === true || ["used", "registered"].includes(invite.status)) return "已註冊";
+    if (invite.used === false && invite.status === "pending") return "邀請中";
+    return invite.status || "未知";
+  }
+
+  function visibleInvites(invites = currentInvites) {
+    return (Array.isArray(invites) ? invites : []).filter((invite) => invite?.hidden !== true && invite?.status !== "deleted");
   }
 
   function tagsInputValue(tags) {
@@ -331,6 +350,11 @@
           <section class="merchant-dashboard-section ${activeSection === "users" ? "is-active" : ""}" data-merchant-panel="users">
             <h1>\u7528\u6236\u7ba1\u7406</h1>
             <div class="merchant-data-panel" data-users-panel>
+              <div class="merchant-subtabs" data-users-subtabs>
+                <button class="merchant-subtabs__button ${usersSubsection === "list" ? "is-active" : ""}" type="button" data-users-subtab="list">用戶列表</button>
+                <button class="merchant-subtabs__button ${usersSubsection === "invites" ? "is-active" : ""}" type="button" data-users-subtab="invites">邀請記錄</button>
+              </div>
+              <section class="merchant-subpanel ${usersSubsection === "list" ? "is-active" : ""}" data-users-subpanel="list">
               <div class="merchant-stat-grid">
                 <article class="merchant-stat-card"><span>\u7e3d\u7528\u6236\u6578</span><strong data-total-users>0</strong></article>
                 <article class="merchant-stat-card"><span>admin 數量</span><strong data-admin-users>0</strong></article>
@@ -340,6 +364,11 @@
               ${canManageUsers() ? `<div class="merchant-users-toolbar"><button class="merchant-primary-button" type="button" data-open-invite-modal>邀請用戶</button></div>` : ""}
               <p class="merchant-data-message" data-users-message>\u6b63\u5728\u8f09\u5165\u7528\u6236\u8cc7\u6599\u2026</p>
               <div class="merchant-table-wrap" data-users-table></div>
+              </section>
+              <section class="merchant-subpanel ${usersSubsection === "invites" ? "is-active" : ""}" data-users-subpanel="invites">
+                <p class="merchant-data-message" data-user-invites-message>正在載入邀請記錄…</p>
+                <div class="merchant-table-wrap" data-user-invites-table></div>
+              </section>
             </div>
           </section>
           <section class="merchant-dashboard-section ${activeSection === "sales" ? "is-active" : ""}" data-merchant-panel="sales">
@@ -390,7 +419,7 @@
   }
 
   function renderUsers(users) {
-    currentUsers = Array.isArray(users) ? users : [];
+    currentUsers = (Array.isArray(users) ? users : []).filter(isVisibleUser);
     const total = document.querySelector("[data-total-users]");
     const adminTotal = document.querySelector("[data-admin-users]");
     const staffTotal = document.querySelector("[data-staff-users]");
@@ -474,6 +503,58 @@
           }).join("")}
         </tbody>
       </table>`;
+  }
+
+  function renderUserInvites(invites) {
+    currentInvites = Array.isArray(invites) ? invites : [];
+    const message = document.querySelector("[data-user-invites-message]");
+    const table = document.querySelector("[data-user-invites-table]");
+    if (!message || !table) return;
+    const rows = visibleInvites(currentInvites);
+    if (!rows.length) {
+      message.textContent = "暫時沒有邀請記錄。";
+      table.innerHTML = "";
+      return;
+    }
+    message.textContent = "";
+    table.innerHTML = `
+      <table class="merchant-data-table">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>身份</th>
+            <th>狀態</th>
+            <th>邀請日期</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((invite) => `
+            <tr>
+              <td>${escapeHtml(invite.email || "未有電郵")}</td>
+              <td>${escapeHtml(roleLabel(invite.role))}</td>
+              <td>${escapeHtml(inviteStatusLabel(invite))}</td>
+              <td>${escapeHtml(formatDateTime(invite.createdAt))}</td>
+              <td>
+                <button class="merchant-icon-button merchant-icon-button--delete" type="button" data-delete-invite="${escapeHtml(invite.id || invite.token)}" aria-label="刪除邀請記錄">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 21c-1.1 0-2-.9-2-2V8h14v11c0 1.1-.9 2-2 2H7ZM9 4h6l1 2h4v2H4V6h4l1-2Zm0 7v7h2v-7H9Zm4 0v7h2v-7h-2Z"/></svg>
+                </button>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>`;
+  }
+
+  function renderUserInvitesError(error) {
+    const message = document.querySelector("[data-user-invites-message]");
+    const table = document.querySelector("[data-user-invites-table]");
+    if (!message) return;
+    message.dataset.type = "error";
+    message.textContent = error?.code === "permission-denied"
+      ? "目前 Firestore Rules 未允許商戶讀取邀請記錄。請按回報中的步驟更新 Firestore Rules。"
+      : merchantErrorMessage(error, "無法讀取邀請記錄。");
+    if (table) table.innerHTML = "";
   }
 
   function renderUsersError(error) {
@@ -791,6 +872,19 @@
     }
   }
 
+  async function hideOrDeleteInvite(inviteId) {
+    if (!canManageUsers()) return showMerchantToast("你沒有刪除邀請記錄的權限。");
+    const normalizedId = String(inviteId || "").trim();
+    if (!normalizedId) return showMerchantToast("找不到邀請記錄。");
+    try {
+      const firebase = await firebaseService();
+      await firebase.hideOrDeleteUserInvite?.(normalizedId);
+      showMerchantToast("邀請記錄已刪除");
+    } catch (error) {
+      showMerchantToast(merchantErrorMessage(error, "無法刪除邀請記錄。"));
+    }
+  }
+
   async function updateUserRole(userId, nextRole) {
     if (!canManagePermissions()) return showMerchantToast("你沒有權限管理用戶身份。");
     const user = editableUserById(userId);
@@ -900,6 +994,11 @@
       dashboardUnsubscribers.push(firebase.listenUsers(renderUsers, renderUsersError));
     } else {
       renderUsers([]);
+    }
+    if (canManageUsers() && firebase.listenUserInvites) {
+      dashboardUnsubscribers.push(firebase.listenUserInvites(renderUserInvites, renderUserInvitesError));
+    } else {
+      renderUserInvites([]);
     }
     if (hasPermission("ordersRead") && firebase.listenOrders) {
       dashboardUnsubscribers.push(firebase.listenOrders(renderOrders, renderOrdersError));
@@ -1477,6 +1576,17 @@
     if (event.target.closest("[data-open-invite-modal]")) return openInviteModal();
     if (event.target.closest("[data-copy-invite-link]")) return copyInviteLink();
     if (event.target.closest("[data-merchant-dashboard-logout]")) return handleMerchantLogout();
+    const usersSubtabButton = event.target.closest("[data-users-subtab]");
+    if (usersSubtabButton) {
+      usersSubsection = usersSubtabButton.dataset.usersSubtab || "list";
+      document.querySelectorAll("[data-users-subtab]").forEach((button) => {
+        button.classList.toggle("is-active", button === usersSubtabButton);
+      });
+      document.querySelectorAll("[data-users-subpanel]").forEach((panel) => {
+        panel.classList.toggle("is-active", panel.dataset.usersSubpanel === usersSubsection);
+      });
+      return;
+    }
     const sectionButton = event.target.closest("[data-merchant-section]");
     if (sectionButton) {
       const section = sectionButton.dataset.merchantSection;
@@ -1540,6 +1650,8 @@
     }
     const deleteUserButton = event.target.closest("[data-delete-user]");
     if (deleteUserButton) return deleteUser(deleteUserButton.dataset.deleteUser);
+    const deleteInviteButton = event.target.closest("[data-delete-invite]");
+    if (deleteInviteButton) return hideOrDeleteInvite(deleteInviteButton.dataset.deleteInvite);
     if (event.target.closest("[data-sort-users-created]")) {
       userCreatedSort = userCreatedSort === "desc" ? "asc" : "desc";
       return renderUsers(currentUsers);

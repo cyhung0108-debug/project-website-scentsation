@@ -210,8 +210,10 @@
         token: String(data.token || snapshot.id),
         status: String(data.status || "pending"),
         used: data.used === true,
+        hidden: data.hidden === true,
         createdAt: normalizeTimestamp(data.createdAt),
-        usedAt: normalizeTimestamp(data.usedAt)
+        usedAt: normalizeTimestamp(data.usedAt),
+        deletedAt: normalizeTimestamp(data.deletedAt)
       };
     }
 
@@ -271,6 +273,31 @@
       });
       await batch.commit();
       return invite;
+    }
+
+    function listenUserInvites(callback, onError) {
+      return firestoreSdk.onSnapshot(
+        firestoreSdk.collection(db, "userInvites"),
+        (snapshot) => callback(
+          snapshot.docs
+            .map(normalizeInviteRecord)
+            .filter(Boolean)
+            .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+        ),
+        onError
+      );
+    }
+
+    async function hideOrDeleteUserInvite(inviteId) {
+      const normalizedId = String(inviteId || "").trim();
+      if (!normalizedId) throw new Error("缺少邀請記錄 ID。");
+      const allowed = {
+        status: "deleted",
+        hidden: true,
+        deletedAt: firestoreSdk.serverTimestamp()
+      };
+      await firestoreSdk.setDoc(firestoreSdk.doc(db, "userInvites", normalizedId), allowed, { merge: true });
+      return { id: normalizedId, ...allowed };
     }
 
     async function updateCurrentUserProfile(updates) {
@@ -557,6 +584,8 @@
       listenOrdersByCustomer,
       updateOrder,
       createUserInvite,
+      listenUserInvites,
+      hideOrDeleteUserInvite,
       getUserInvite,
       acceptUserInvite,
       uploadProductImage,

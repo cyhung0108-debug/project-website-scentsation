@@ -301,6 +301,35 @@
   margin: 0 0 14px;
 }
 
+.merchant-subtabs {
+  display: flex;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.merchant-subtabs__button {
+  min-height: 38px;
+  border: 1px solid #d8d4cc;
+  padding: 0 14px;
+  background: #fff;
+  color: #665f55;
+  font: inherit;
+  cursor: pointer;
+}
+
+.merchant-subtabs__button.is-active {
+  background: #f4efe6;
+  color: #302e2f;
+}
+
+.merchant-subpanel {
+  display: none;
+}
+
+.merchant-subpanel.is-active {
+  display: block;
+}
+
 .merchant-invite-actions {
   display: flex;
   justify-content: flex-end;
