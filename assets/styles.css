@@ -324,9 +324,182 @@
   background: #f7f5f0;
 }
 
+.merchant-users-table {
+  min-width: 1160px;
+}
+
+.merchant-user-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.merchant-user-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ede6db;
+  color: #302e2f;
+  flex: 0 0 auto;
+}
+
+.merchant-user-name {
+  display: block;
+  color: #302e2f;
+}
+
+.merchant-user-cell small {
+  display: block;
+  margin-top: 3px;
+  color: #70675c;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.merchant-sort-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.merchant-switch {
+  position: relative;
+  display: inline-flex;
+  width: 42px;
+  height: 24px;
+}
+
+.merchant-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.merchant-switch span {
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: #d8d4cc;
+  transition: background 0.2s ease;
+  cursor: pointer;
+}
+
+.merchant-switch span::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  transition: transform 0.2s ease;
+}
+
+.merchant-switch input:checked + span {
+  background: #496a87;
+}
+
+.merchant-switch--danger input:checked + span {
+  background: #b45145;
+}
+
+.merchant-switch input:checked + span::after {
+  transform: translateX(18px);
+}
+
+.merchant-switch input:disabled + span {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.merchant-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.merchant-icon-button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #d8d4cc;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  cursor: pointer;
+}
+
+.merchant-icon-button svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.merchant-icon-button--edit {
+  color: #2f6fa4;
+}
+
+.merchant-icon-button--delete {
+  color: #b45145;
+}
+
+.merchant-icon-button:hover {
+  background: #f7f5f0;
+}
+
+.merchant-icon-button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.merchant-permission-placeholder {
+  border: 1px solid #e2ded8;
+  padding: 18px;
+  background: #faf8f4;
+}
+
+.merchant-permission-placeholder h2 {
+  margin: 0 0 8px;
+}
+
 .merchant-user-form {
   border: 0;
   padding: 0;
+}
+
+.merchant-user-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.merchant-user-form-grid label {
+  display: grid;
+  gap: 6px;
+}
+
+.merchant-user-form-grid input,
+.merchant-user-form-grid select,
+.merchant-user-form-grid textarea {
+  width: 100%;
+  border: 1px solid #d8d4cc;
+  padding: 9px 10px;
+  background: #fff;
+  color: #302e2f;
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.merchant-user-form-wide {
+  grid-column: 1 / -1;
 }
 
 .merchant-user-readonly {

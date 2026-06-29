@@ -167,7 +167,17 @@
       const uid = String(userId || "").trim();
       if (!uid) throw new Error("缺少用戶 UID。");
       const allowed = {};
+      if ("displayName" in updates) allowed.displayName = String(updates.displayName || "").trim();
+      if ("phone" in updates) allowed.phone = String(updates.phone || "").trim();
+      if ("address" in updates) allowed.address = String(updates.address || "").trim();
+      if ("birthday" in updates) allowed.birthday = String(updates.birthday || "").trim();
+      if ("gender" in updates) allowed.gender = String(updates.gender || "").trim();
       if ("note" in updates) allowed.note = String(updates.note || "").trim();
+      if ("tags" in updates) {
+        allowed.tags = Array.isArray(updates.tags)
+          ? updates.tags.map((tag) => String(tag || "").trim()).filter(Boolean)
+          : String(updates.tags || "").split(/[\n,]/).map((tag) => tag.trim()).filter(Boolean);
+      }
       allowed.updatedAt = firestoreSdk.serverTimestamp();
       await firestoreSdk.setDoc(firestoreSdk.doc(db, "users", uid), allowed, { merge: true });
       return { id: uid, ...allowed };

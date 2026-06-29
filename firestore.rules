@@ -133,12 +133,16 @@ service cloud.firestore {
 
     function validAdminUserUpdate() {
       return canManageUsers()
+        && (
+          isSuperAdmin()
+          || (isAdmin() && !(resource.data.role in ["super_admin", "admin"]))
+        )
         && request.resource.data.uid == resource.data.uid
         && request.resource.data.email == resource.data.email
         && request.resource.data.providerId == resource.data.providerId
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          "displayName", "phone", "status", "note", "tags", "updatedAt"
+          "displayName", "phone", "address", "birthday", "gender", "note", "tags", "updatedAt"
         ]);
     }
 
