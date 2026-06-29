@@ -168,6 +168,41 @@ service cloud.firestore {
         && data.updatedBy == request.auth.uid;
     }
 
+    function isAboutPayload(data) {
+      return data.keys().hasOnly([
+          "type",
+          "title",
+          "subtitle",
+          "intro",
+          "sectionTitle",
+          "sectionContent",
+          "imageUrl",
+          "imageAlt",
+          "isActive",
+          "updatedAt",
+          "updatedBy"
+        ])
+        && data.type == "about"
+        && data.title is string
+        && data.title.size() <= 120
+        && data.subtitle is string
+        && data.subtitle.size() <= 160
+        && data.intro is string
+        && data.intro.size() <= 600
+        && data.sectionTitle is string
+        && data.sectionTitle.size() <= 120
+        && data.sectionContent is string
+        && data.sectionContent.size() <= 800
+        && data.imageUrl is string
+        && data.imageUrl.size() <= 2000
+        && data.imageAlt is string
+        && data.imageAlt.size() <= 160
+        && data.isActive is bool
+        && data.updatedAt is timestamp
+        && data.updatedBy is string
+        && data.updatedBy == request.auth.uid;
+    }
+
     match /merchantRoles/{userId} {
       allow read: if isOwner(userId) || isMerchant();
       allow create, update, delete: if false;
@@ -204,6 +239,7 @@ service cloud.firestore {
           (docId == "home" && isHomeHeroPayload(request.resource.data))
           || (docId == "footer" && isFooterPayload(request.resource.data))
           || (docId == "contact" && isContactPayload(request.resource.data))
+          || (docId == "about" && isAboutPayload(request.resource.data))
         );
       allow delete: if false;
     }

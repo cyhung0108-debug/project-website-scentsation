@@ -14,6 +14,8 @@
     authRedirect: "",
     authTab: "email",
     authBusy: false,
+    aboutContent: null,
+    aboutContentLoadStarted: false,
     currentUser: null,
     contactContent: null,
     contactContentLoadStarted: false,
@@ -191,6 +193,50 @@
       ...fallback,
       ...state.contactContent,
       title: state.contactContent.title || fallback.title
+    };
+  }
+
+  function fallbackAboutContent() {
+    const about = siteConfig.about || {};
+    const firstSection = Array.isArray(about.sections) ? about.sections[0] || {} : {};
+    return {
+      type: "about",
+      title: String(about.title || "關於我們"),
+      subtitle: String(about.subtitle || about.companyName || ""),
+      intro: String(about.intro || "請在 assets/site-config.js 填寫公司簡介。"),
+      sectionTitle: String(about.sectionTitle || firstSection.heading || ""),
+      sectionContent: String(about.sectionContent || firstSection.content || ""),
+      imageUrl: String(about.imageUrl || ""),
+      imageAlt: String(about.imageAlt || about.title || "About"),
+      isActive: about.isActive !== false
+    };
+  }
+
+  function normalizeRemoteAboutContent(data) {
+    if (!data || data.type !== "about" || typeof data.isActive !== "boolean") return null;
+    const stringFields = ["title", "subtitle", "intro", "sectionTitle", "sectionContent", "imageUrl", "imageAlt"];
+    if (!stringFields.every((field) => typeof data[field] === "string")) return null;
+    return {
+      type: "about",
+      title: data.title,
+      subtitle: data.subtitle,
+      intro: data.intro,
+      sectionTitle: data.sectionTitle,
+      sectionContent: data.sectionContent,
+      imageUrl: data.imageUrl,
+      imageAlt: data.imageAlt,
+      isActive: data.isActive
+    };
+  }
+
+  function currentAboutContent() {
+    const fallback = fallbackAboutContent();
+    if (!state.aboutContent) return fallback;
+    return {
+      ...fallback,
+      ...state.aboutContent,
+      title: state.aboutContent.title || fallback.title,
+      imageAlt: state.aboutContent.imageAlt || fallback.imageAlt
     };
   }
 
@@ -1104,7 +1150,7 @@
     setupProductImageObserver();
   }
 
-  function renderAboutPage() {
+  function renderAboutPageLegacy() {
     const container = $("[data-about-page]");
     if (!container) return;
     const about = siteConfig.about || {};
@@ -1162,6 +1208,63 @@
         </div>
       </section>
     `;
+  }
+
+  function renderAboutPage() {
+    const container = $("[data-about-page]");
+    if (!container) return;
+    const about = currentAboutContent();
+    const aboutImage = resolveAssetUrl(about.imageUrl);
+    document.title = `${about.title || "About"} - APOTHEKE`;
+
+    if (!about.isActive) {
+      container.innerHTML = `
+        <section class="info-page about-page">
+          <h1>${escapeHtml(about.title || "About")}</h1>
+          ${about.subtitle ? `<h2>${escapeHtml(about.subtitle)}</h2>` : ""}
+        </section>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <section class="info-page about-page">
+        <div class="about-page__layout">
+          <div class="about-page__content">
+            <h1>${escapeHtml(about.title || "About")}</h1>
+            ${about.subtitle ? `<h2>${escapeHtml(about.subtitle)}</h2>` : ""}
+            ${about.intro ? `<p class="info-intro">${textToHtml(about.intro)}</p>` : ""}
+            ${(about.sectionTitle || about.sectionContent) ? `
+              <div class="info-sections">
+                <article>
+                  ${about.sectionTitle ? `<h3>${escapeHtml(about.sectionTitle)}</h3>` : ""}
+                  ${about.sectionContent ? `<p>${textToHtml(about.sectionContent)}</p>` : ""}
+                </article>
+              </div>
+            ` : ""}
+          </div>
+          ${aboutImage ? `
+            <figure class="about-page__image">
+              <img src="${escapeHtml(aboutImage)}" alt="${escapeHtml(about.imageAlt || about.title || "About")}">
+            </figure>
+          ` : ""}
+        </div>
+      </section>
+    `;
+  }
+
+  async function loadAboutContent() {
+    if (state.aboutContentLoadStarted || !document.querySelector("[data-about-page]")) return;
+    state.aboutContentLoadStarted = true;
+    try {
+      const firebase = await getFirebaseService();
+      const content = normalizeRemoteAboutContent(await firebase.getSiteContent("about"));
+      if (!content) return;
+      state.aboutContent = content;
+      renderAboutPage();
+    } catch (error) {
+      console.warn("About content load failed; using site-config fallback.", error);
+    }
   }
 
   function renderContactPage() {
@@ -1969,6 +2072,7 @@
   loadHomeHeroContent();
   renderProductDetail();
   renderAboutPage();
+  loadAboutContent();
   renderContactPage();
   loadContactContent();
   renderPolicyPage();
