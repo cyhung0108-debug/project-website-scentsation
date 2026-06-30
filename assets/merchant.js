@@ -23,7 +23,36 @@
   let userCreatedSort = "desc";
   let usersSubsection = "list";
   let currentInviteLink = "";
+  let activeDashboardSection = "products";
+  let currentOrders = [];
   const BACKOFFICE_ROLES = ["super_admin", "admin", "staff"];
+  const ROLE_PERMISSION_ROLES = ["super_admin", "admin", "staff", "customer"];
+  const ROLE_PERMISSION_FEATURES = [
+    { key: "usersManage", label: "用戶管理" },
+    { key: "inviteUsers", label: "邀請用戶" },
+    { key: "inviteRecords", label: "邀請記錄" },
+    { key: "salesManage", label: "銷售管理" },
+    { key: "productsManage", label: "產品管理" },
+    { key: "categoriesManage", label: "分類管理" },
+    { key: "pagesManage", label: "網頁管理" },
+    { key: "permissionsManage", label: "權限管理" },
+    { key: "storePreview", label: "商戶預覽店鋪" },
+    { key: "usersBlock", label: "封鎖 / 恢復用戶" },
+    { key: "viewUserDetails", label: "查看用戶資料" },
+    { key: "usersRoleEdit", label: "修改用戶身份" },
+    { key: "usersProfileEdit", label: "修改用戶資料" },
+    { key: "ordersRead", label: "查看訂單" },
+    { key: "ordersUpdate", label: "修改訂單狀態" }
+  ];
+  const LEGACY_PERMISSION_ALIASES = {
+    usersRead: "usersManage",
+    usersWrite: "usersProfileEdit",
+    ordersRead: "ordersRead",
+    productsWrite: "productsManage",
+    pagesWrite: "pagesManage",
+    permissionsWrite: "permissionsManage"
+  };
+  let currentRolePermissions = defaultRolePermissions();
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -54,18 +83,38 @@
     return Boolean(user?.uid && isActiveBackofficeUser(role));
   }
 
+  function defaultRolePermissions() {
+    const permissions = {};
+    ROLE_PERMISSION_FEATURES.forEach((feature) => {
+      permissions[feature.key] = {
+        super_admin: true,
+        admin: true,
+        staff: ["productsManage", "categoriesManage", "pagesManage", "storePreview", "viewUserDetails"].includes(feature.key),
+        customer: false
+      };
+    });
+    return permissions;
+  }
+
+  function normalizeRolePermissions(permissions) {
+    const merged = defaultRolePermissions();
+    ROLE_PERMISSION_FEATURES.forEach((feature) => {
+      const row = permissions?.[feature.key] && typeof permissions[feature.key] === "object" ? permissions[feature.key] : {};
+      ROLE_PERMISSION_ROLES.forEach((role) => {
+        if (row[role] !== undefined) merged[feature.key][role] = row[role] === true;
+      });
+    });
+    return merged;
+  }
+
+  function permissionKey(key) {
+    return LEGACY_PERMISSION_ALIASES[key] || key;
+  }
+
   function hasPermission(permission, role = currentMerchantRole) {
-    if (!role?.active) return false;
-    if (permission === "usersRead" || permission === "usersWrite" || permission === "ordersRead") {
-      return ["super_admin", "admin"].includes(role.role);
-    }
-    if (permission === "productsWrite" || permission === "pagesWrite") {
-      return ["super_admin", "admin", "staff"].includes(role.role);
-    }
-    if (permission === "permissionsWrite") {
-      return ["super_admin", "admin"].includes(role.role);
-    }
-    return role?.permissions?.[permission] === true;
+    const feature = permissionKey(permission);
+    if (!role?.active || !isBackofficeRole(role.role)) return false;
+    return currentRolePermissions?.[feature]?.[role.role] === true;
   }
 
   function isSuperAdmin(role = currentMerchantRole) {
@@ -81,23 +130,31 @@
   }
 
   function canManageUsers(role = currentMerchantRole) {
-    return isSuperAdmin(role) || isAdmin(role);
+    return hasPermission("usersManage", role);
+  }
+
+  function canViewUserDetails(role = currentMerchantRole) {
+    return hasPermission("viewUserDetails", role);
+  }
+
+  function canOpenUsersSection(role = currentMerchantRole) {
+    return canManageUsers(role) || canViewUserDetails(role);
   }
 
   function canManagePermissions(role = currentMerchantRole) {
-    return isSuperAdmin(role) || isAdmin(role);
+    return hasPermission("permissionsManage", role);
   }
 
   function canManageProducts(role = currentMerchantRole) {
-    return isSuperAdmin(role) || isAdmin(role) || isStaff(role);
+    return hasPermission("productsManage", role);
   }
 
   function canManagePages(role = currentMerchantRole) {
-    return isSuperAdmin(role) || isAdmin(role) || isStaff(role);
+    return hasPermission("pagesManage", role);
   }
 
   function canReadSales(role = currentMerchantRole) {
-    return isSuperAdmin(role) || isAdmin(role);
+    return hasPermission("salesManage", role);
   }
 
   function roleLabel(role) {
@@ -156,7 +213,14 @@
     return false;
   }
 
+  function canEditUserNote(user) {
+    if (!user) return false;
+    if (hasPermission("usersProfileEdit") && canModifyUser(user)) return true;
+    return isStaff() && canViewUserDetails();
+  }
+
   function canSetUserRole(user, nextRole) {
+    if (!hasPermission("usersRoleEdit")) return false;
     if (!canModifyUser(user)) return false;
     if (isSuperAdmin()) return ["super_admin", "admin", "staff", "customer"].includes(nextRole);
     if (isAdmin()) return ["staff", "customer"].includes(nextRole);
@@ -164,7 +228,7 @@
   }
 
   function canSetUserStatus(user) {
-    return canModifyUser(user);
+    return hasPermission("usersBlock") && canModifyUser(user);
   }
 
   function isVisibleUser(user) {
@@ -327,14 +391,18 @@
   function renderMerchantDashboardShell(user) {
     if (!container) return;
     document.title = "\u5546\u6236\u5f8c\u53f0 - APOTHEKE";
+    if (!hasPermission("inviteRecords") && usersSubsection === "invites") usersSubsection = "list";
     const sections = [
-      canManageUsers() ? { id: "users", label: "\u7528\u6236\u7ba1\u7406" } : null,
+      canOpenUsersSection() ? { id: "users", label: "\u7528\u6236\u7ba1\u7406" } : null,
       canReadSales() ? { id: "sales", label: "\u92b7\u552e\u7ba1\u7406" } : null,
-      canManageProducts() ? { id: "products", label: "\u7522\u54c1\u7ba1\u7406" } : null,
+      (canManageProducts() || hasPermission("categoriesManage")) ? { id: "products", label: "\u7522\u54c1\u7ba1\u7406" } : null,
       canManagePages() ? { id: "site", label: "\u7db2\u9801\u7ba1\u7406" } : null,
       canManagePermissions() ? { id: "permissions", label: "\u6b0a\u9650\u7ba1\u7406" } : null
     ].filter(Boolean);
-    const activeSection = sections[0]?.id || "products";
+    if (!sections.some((section) => section.id === activeDashboardSection)) {
+      activeDashboardSection = sections[0]?.id || "products";
+    }
+    const activeSection = activeDashboardSection;
     const navHtml = sections
       .map((section) => `<button class="${section.id === activeSection ? "is-active" : ""}" type="button" data-merchant-section="${section.id}">${section.label}</button>`)
       .join("");
@@ -352,7 +420,7 @@
             <div class="merchant-data-panel" data-users-panel>
               <div class="merchant-subtabs" data-users-subtabs>
                 <button class="merchant-subtabs__button ${usersSubsection === "list" ? "is-active" : ""}" type="button" data-users-subtab="list">用戶列表</button>
-                <button class="merchant-subtabs__button ${usersSubsection === "invites" ? "is-active" : ""}" type="button" data-users-subtab="invites">邀請記錄</button>
+                ${hasPermission("inviteRecords") ? `<button class="merchant-subtabs__button ${usersSubsection === "invites" ? "is-active" : ""}" type="button" data-users-subtab="invites">邀請記錄</button>` : ""}
               </div>
               <section class="merchant-subpanel ${usersSubsection === "list" ? "is-active" : ""}" data-users-subpanel="list">
               <div class="merchant-stat-grid">
@@ -361,11 +429,11 @@
                 <article class="merchant-stat-card"><span>員工</span><strong data-staff-users>0</strong></article>
                 <article class="merchant-stat-card"><span>已封鎖</span><strong data-blocked-users>0</strong></article>
               </div>
-              ${canManageUsers() ? `<div class="merchant-users-toolbar"><button class="merchant-primary-button" type="button" data-open-invite-modal>邀請用戶</button></div>` : ""}
+              ${hasPermission("inviteUsers") ? `<div class="merchant-users-toolbar"><button class="merchant-primary-button" type="button" data-open-invite-modal>邀請用戶</button></div>` : ""}
               <p class="merchant-data-message" data-users-message>\u6b63\u5728\u8f09\u5165\u7528\u6236\u8cc7\u6599\u2026</p>
               <div class="merchant-table-wrap" data-users-table></div>
               </section>
-              <section class="merchant-subpanel ${usersSubsection === "invites" ? "is-active" : ""}" data-users-subpanel="invites">
+              <section class="merchant-subpanel ${usersSubsection === "invites" && hasPermission("inviteRecords") ? "is-active" : ""}" data-users-subpanel="invites">
                 <p class="merchant-data-message" data-user-invites-message>正在載入邀請記錄…</p>
                 <div class="merchant-table-wrap" data-user-invites-table></div>
               </section>
@@ -393,8 +461,8 @@
                 <div class="merchant-products-panel__heading">
                   <h2>\u5168\u90e8\u5546\u54c1</h2>
                   <div class="merchant-products-panel__actions">
-                    <button class="merchant-secondary-button" type="button" data-manage-categories>\u5206\u985e\u7ba1\u7406</button>
-                    <button class="merchant-primary-button" type="button" data-add-product>\u65b0\u589e</button>
+                    ${hasPermission("categoriesManage") ? `<button class="merchant-secondary-button" type="button" data-manage-categories>\u5206\u985e\u7ba1\u7406</button>` : ""}
+                    ${canManageProducts() ? `<button class="merchant-primary-button" type="button" data-add-product>\u65b0\u589e</button>` : ""}
                   </div>
                 </div>
                 <div class="merchant-products" data-merchant-products></div>
@@ -438,7 +506,7 @@
       return;
     }
     message.textContent = "";
-    const canOperateUsers = canManagePermissions() || hasPermission("usersWrite");
+    const canOperateUsers = canViewUserDetails() || hasPermission("usersProfileEdit") || hasPermission("usersRoleEdit") || hasPermission("usersBlock") || hasPermission("ordersRead") || hasPermission("ordersUpdate");
     const sortedUsers = sortedUsersByCreatedAt();
     const sortArrow = userCreatedSort === "desc" ? "↓" : "↑";
     table.innerHTML = `
@@ -461,6 +529,8 @@
             const userId = escapeHtml(user.uid || user.id);
             const canModify = canModifyUser(user);
             const canDelete = canSetUserStatus(user) && user.status !== "blocked";
+            const canOpen = canViewUserDetails();
+            const actionLabel = isStaff() ? "查看" : "修改";
             return `
             <tr>
               <td>
@@ -489,9 +559,7 @@
               ${canOperateUsers ? `
                 <td>
                   <div class="merchant-row-actions">
-                    <button class="merchant-icon-button merchant-icon-button--edit" type="button" data-edit-user="${userId}" aria-label="修改用戶">
-                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17.2V20h2.8L17.1 9.7l-2.8-2.8L4 17.2Zm14.8-9.3c.4-.4.4-1 0-1.4l-1.3-1.3a1 1 0 0 0-1.4 0l-1 1 2.8 2.8.9-1.1Z"/></svg>
-                    </button>
+                    ${canOpen ? `<button class="merchant-table-action merchant-table-action--view" type="button" data-edit-user="${userId}" aria-label="${actionLabel}用戶">${actionLabel}</button>` : ""}
                     <button class="merchant-icon-button merchant-icon-button--delete" type="button" data-delete-user="${userId}" aria-label="刪除用戶" ${canDelete ? "" : "disabled"}>
                       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 21c-1.1 0-2-.9-2-2V8h14v11c0 1.1-.9 2-2 2H7ZM9 4h6l1 2h4v2H4V6h4l1-2Zm0 7v7h2v-7H9Zm4 0v7h2v-7h-2Z"/></svg>
                     </button>
@@ -510,6 +578,11 @@
     const message = document.querySelector("[data-user-invites-message]");
     const table = document.querySelector("[data-user-invites-table]");
     if (!message || !table) return;
+    if (!hasPermission("inviteRecords")) {
+      message.textContent = "你沒有查看邀請記錄的權限。";
+      table.innerHTML = "";
+      return;
+    }
     const rows = visibleInvites(currentInvites);
     if (!rows.length) {
       message.textContent = "暫時沒有邀請記錄。";
@@ -582,11 +655,54 @@
       return;
     }
     message.textContent = "";
+    message.dataset.type = "";
+    const roleHeadings = ROLE_PERMISSION_ROLES.map((role) => `
+      <th class="${isAdmin() && role === "super_admin" ? "is-disabled" : ""}">
+        ${escapeHtml(roleLabel(role))}
+        <small>${escapeHtml(role)}</small>
+      </th>
+    `).join("");
     table.innerHTML = `
-      <div class="merchant-permission-placeholder">
-        <h2>身份功能權限</h2>
-        <p>這裡將用於設定超級管理員、管理員、員工和顧客對每個後台頁面或功能的權限。單個用戶身份與封鎖狀態請在「用戶管理」頁處理。</p>
-      </div>`;
+      <table class="merchant-data-table merchant-permissions-table">
+        <thead>
+          <tr>
+            <th>功能 / 頁面</th>
+            ${roleHeadings}
+          </tr>
+        </thead>
+        <tbody>
+          ${ROLE_PERMISSION_FEATURES.map((feature) => `
+            <tr>
+              <th scope="row">
+                ${escapeHtml(feature.label)}
+                <small>${escapeHtml(feature.key)}</small>
+              </th>
+              ${ROLE_PERMISSION_ROLES.map((role) => {
+                const disabled = isAdmin() && role === "super_admin";
+                return `
+                  <td class="${disabled ? "is-disabled" : ""}">
+                    <label class="merchant-switch" aria-label="${escapeHtml(feature.label)} ${escapeHtml(roleLabel(role))}">
+                      <input type="checkbox" data-role-permission-toggle data-feature="${escapeHtml(feature.key)}" data-role="${escapeHtml(role)}" ${currentRolePermissions?.[feature.key]?.[role] ? "checked" : ""} ${disabled ? "disabled" : ""}>
+                      <span></span>
+                    </label>
+                  </td>
+                `;
+              }).join("")}
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>`;
+  }
+
+  function renderPermissionsError(error) {
+    const message = document.querySelector("[data-permissions-message]");
+    const table = document.querySelector("[data-permissions-table]");
+    if (!message) return;
+    message.dataset.type = "error";
+    message.textContent = error?.code === "permission-denied"
+      ? "目前 Firestore Rules 未允許讀取權限設定。請部署更新後的 Firestore Rules。"
+      : merchantErrorMessage(error, "無法讀取權限設定。");
+    if (table) table.innerHTML = "";
   }
 
   function editableUserById(userId) {
@@ -608,7 +724,7 @@
         </div>
         <div class="merchant-user-order-card__grid">
           <label>狀態
-            <select name="orderStatus" data-order-status="${escapeHtml(order.id)}" ${hasPermission("ordersRead") ? "" : "disabled"}>
+            <select name="orderStatus" data-order-status="${escapeHtml(order.id)}" ${hasPermission("ordersUpdate") ? "" : "disabled"}>
               ${["pending", "paid", "processing", "shipped", "completed", "cancelled"].map((status) => `
                 <option value="${status}" ${order.status === status ? "selected" : ""}>${escapeHtml(orderStatusLabel(status))}</option>
               `).join("")}
@@ -620,7 +736,7 @@
           </div>
         </div>
         <label>商戶備註
-          <textarea rows="3" data-order-note="${escapeHtml(order.id)}" ${hasPermission("ordersRead") ? "" : "disabled"}>${escapeHtml(order.merchantNote || "")}</textarea>
+          <textarea rows="3" data-order-note="${escapeHtml(order.id)}" ${hasPermission("ordersUpdate") ? "" : "disabled"}>${escapeHtml(order.merchantNote || "")}</textarea>
         </label>
       </article>
     `).join("");
@@ -629,8 +745,9 @@
   function userEditorForm(user) {
     const userRole = user.role || "customer";
     const roleOptions = roleOptionsForEditor(userRole);
-    const canEditProfile = hasPermission("usersWrite") && canModifyUser(user);
-    const canEditAccess = canManagePermissions() && canModifyUser(user);
+    const canEditProfile = hasPermission("usersProfileEdit") && canModifyUser(user);
+    const canEditAccess = (hasPermission("usersRoleEdit") || hasPermission("usersBlock")) && canModifyUser(user);
+    const canEditNoteOnly = isStaff() && canViewUserDetails();
     const isCustomer = userRole === "customer";
     return `
       <h2 id="merchantUserTitle">修改用戶資料</h2>
@@ -640,12 +757,12 @@
           <label>Email<input value="${escapeHtml(user.email || "未有電郵")}" disabled></label>
           <label>User ID / UID<input value="${escapeHtml(user.uid || user.id)}" disabled></label>
           <label>身份
-            <select name="role" ${canEditAccess && roleOptions.length ? "" : "disabled"}>
+            <select name="role" ${hasPermission("usersRoleEdit") && canEditAccess && roleOptions.length ? "" : "disabled"}>
               ${roleOptions.length ? roleOptions.map((role) => `<option value="${role}" ${userRole === role ? "selected" : ""}>${escapeHtml(roleLabel(role))}</option>`).join("") : `<option value="${escapeHtml(userRole)}">${escapeHtml(roleLabel(userRole))}</option>`}
             </select>
           </label>
           <label>狀態
-            <select name="status" ${canEditAccess ? "" : "disabled"}>
+            <select name="status" ${hasPermission("usersBlock") && canEditAccess ? "" : "disabled"}>
               <option value="active" ${user.status !== "blocked" ? "selected" : ""}>正常</option>
               <option value="blocked" ${user.status === "blocked" ? "selected" : ""}>已封鎖</option>
             </select>
@@ -661,7 +778,7 @@
               <option value="other" ${user.gender === "other" ? "selected" : ""}>其他</option>
             </select>
           </label>
-          <label class="merchant-user-form-wide">備註<textarea name="note" rows="3" ${canEditProfile ? "" : "disabled"}>${escapeHtml(user.note || "")}</textarea></label>
+          <label class="merchant-user-form-wide">備註<textarea name="note" rows="3" ${(canEditProfile || canEditNoteOnly) ? "" : "disabled"}>${escapeHtml(user.note || "")}</textarea></label>
           <p class="merchant-user-readonly">創建時間：${escapeHtml(formatDateTime(user.createdAt))}</p>
           <p class="merchant-user-readonly">更新時間：${escapeHtml(formatDateTime(user.updatedAt))}</p>
         </div>
@@ -670,7 +787,7 @@
           <div class="merchant-user-orders__list" data-user-order-list></div>
         </section>
         <p class="merchant-message" data-merchant-user-message aria-live="polite"></p>
-        <div class="merchant-modal__actions"><button class="merchant-secondary-button" type="button" data-close-merchant-modal>取消</button><button class="merchant-primary-button" type="submit" data-save-user>${hasPermission("usersWrite") || hasPermission("ordersRead") ? "儲存" : "關閉"}</button></div>
+        <div class="merchant-modal__actions"><button class="merchant-secondary-button" type="button" data-close-merchant-modal>取消</button><button class="merchant-primary-button" type="submit" data-save-user>${canEditProfile || canEditNoteOnly || hasPermission("usersRoleEdit") || hasPermission("usersBlock") || hasPermission("ordersUpdate") ? "儲存" : "關閉"}</button></div>
       </form>`;
   }
 
@@ -725,7 +842,7 @@
   }
 
   function openInviteModal() {
-    if (!canManageUsers()) return showMerchantToast("你沒有邀請用戶的權限。");
+    if (!hasPermission("inviteUsers")) return showMerchantToast("你沒有邀請用戶的權限。");
     ensureMerchantModals();
     currentInviteLink = "";
     const container = document.querySelector("[data-merchant-invite-content]");
@@ -737,7 +854,7 @@
   }
 
   async function openUserEditor(userId) {
-    if (!hasPermission("usersWrite") && !hasPermission("ordersRead")) return showMerchantToast("你沒有查看用戶資料的權限。");
+    if (!canViewUserDetails()) return showMerchantToast("你沒有查看用戶資料的權限。");
     const user = editableUserById(userId);
     if (!user) return showMerchantToast("找不到此用戶。");
     editingUserId = String(user.uid || user.id);
@@ -752,19 +869,21 @@
         customerOrdersUnsub();
         customerOrdersUnsub = null;
       }
-      customerOrdersUnsub = firebase.listenOrdersByCustomer?.(
-        user.uid || user.id,
-        user.email || "",
-        (orders) => {
-          editingUserOrders = Array.isArray(orders) ? orders : [];
-          renderUserOrdersEditor();
-        },
-        (error) => {
-          editingUserOrders = [];
-          renderUserOrdersEditor();
-          setUserEditorError(merchantErrorMessage(error, "無法讀取此用戶的訂單資料。"));
-        }
-      );
+      if (hasPermission("ordersRead")) {
+        customerOrdersUnsub = firebase.listenOrdersByCustomer?.(
+          user.uid || user.id,
+          user.email || "",
+          (orders) => {
+            editingUserOrders = Array.isArray(orders) ? orders : [];
+            renderUserOrdersEditor();
+          },
+          (error) => {
+            editingUserOrders = [];
+            renderUserOrdersEditor();
+            setUserEditorError(merchantErrorMessage(error, "無法讀取此用戶的訂單資料。"));
+          }
+        );
+      }
     } catch (error) {
       setUserEditorError(merchantErrorMessage(error, "無法讀取此用戶的訂單資料。"));
     }
@@ -779,7 +898,7 @@
 
   async function saveUserForm(form) {
     if (!editingUserId) return setUserEditorError("找不到此用戶。");
-    if (!hasPermission("usersWrite") && !hasPermission("ordersRead")) return setUserEditorError("你沒有修改用戶資料的權限。");
+    if (!canEditUserNote(editableUserById(editingUserId)) && !hasPermission("usersRoleEdit") && !hasPermission("usersBlock") && !hasPermission("ordersUpdate")) return setUserEditorError("你沒有修改用戶資料的權限。");
     const data = new FormData(form);
     const user = editableUserById(editingUserId);
     if (!user) return setUserEditorError("找不到此用戶。");
@@ -788,28 +907,32 @@
     button.textContent = "儲存中…";
     try {
       const firebase = await firebaseService();
-      if (hasPermission("usersWrite") && canModifyUser(user)) {
+      if (hasPermission("usersProfileEdit") && canModifyUser(user)) {
         const profileUpdates = {
           displayName: data.get("displayName"),
           note: data.get("note"),
         };
         await firebase.updateUserProfile(editingUserId, profileUpdates);
+      } else if (canEditUserNote(user)) {
+        await firebase.updateUserProfile(editingUserId, {
+          note: data.get("note"),
+        });
       }
-      if (canManagePermissions() && canModifyUser(user)) {
+      if ((hasPermission("usersRoleEdit") || hasPermission("usersBlock")) && canModifyUser(user)) {
         const nextRole = String(data.get("role") || user.role || "customer");
         const nextStatus = String(data.get("status") || user.status || "active");
         const accessUpdates = {};
-        if (nextRole !== user.role) {
+        if (nextRole !== user.role && hasPermission("usersRoleEdit")) {
           if (!canSetUserRole(user, nextRole)) throw new Error("你沒有權限設定此身份。");
           accessUpdates.role = nextRole;
         }
-        if (nextStatus !== user.status) {
+        if (nextStatus !== user.status && hasPermission("usersBlock")) {
           if (!canSetUserStatus(user)) throw new Error("你沒有權限修改此狀態。");
           accessUpdates.status = nextStatus;
         }
         if (Object.keys(accessUpdates).length) await firebase.updateUserAccess?.(editingUserId, accessUpdates);
       }
-      if (hasPermission("ordersRead")) {
+      if (hasPermission("ordersUpdate")) {
         const orderUpdates = editingUserOrders.map((order) => firebase.updateOrder(order.id, {
           status: form.querySelector(`[data-order-status="${CSS.escape(order.id)}"]`)?.value || order.status,
           merchantNote: form.querySelector(`[data-order-note="${CSS.escape(order.id)}"]`)?.value || ""
@@ -826,7 +949,7 @@
   }
 
   async function createInvite(form) {
-    if (!canManageUsers()) return showMerchantToast("你沒有邀請用戶的權限。");
+    if (!hasPermission("inviteUsers")) return showMerchantToast("你沒有邀請用戶的權限。");
     const data = new FormData(form);
     const email = String(data.get("email") || "").trim();
     const role = String(data.get("role") || "staff").trim();
@@ -867,7 +990,7 @@
   }
 
   async function hideOrDeleteInvite(inviteId) {
-    if (!canManageUsers()) return showMerchantToast("你沒有刪除邀請記錄的權限。");
+    if (!hasPermission("inviteRecords")) return showMerchantToast("你沒有刪除邀請記錄的權限。");
     const normalizedId = String(inviteId || "").trim();
     if (!normalizedId) return showMerchantToast("找不到邀請記錄。");
     try {
@@ -879,8 +1002,40 @@
     }
   }
 
+  async function updateRolePermission(featureKey, roleKey, value, input) {
+    if (!canManagePermissions()) {
+      if (input) input.checked = !value;
+      return showMerchantToast("你沒有權限修改角色權限。");
+    }
+    if (isAdmin() && roleKey === "super_admin") {
+      if (input) input.checked = currentRolePermissions?.[featureKey]?.[roleKey] === true;
+      return showMerchantToast("管理員不能修改超級管理員權限。");
+    }
+    try {
+      const firebase = await firebaseService();
+      await firebase.updateRolePermission?.(featureKey, roleKey, value);
+      currentRolePermissions = normalizeRolePermissions({
+        ...currentRolePermissions,
+        [featureKey]: {
+          ...(currentRolePermissions?.[featureKey] || {}),
+          [roleKey]: value === true
+        }
+      });
+      renderPermissions();
+      showMerchantToast("權限已更新");
+    } catch (error) {
+      if (input) input.checked = !value;
+      const message = document.querySelector("[data-permissions-message]");
+      if (message) {
+        message.dataset.type = "error";
+        message.textContent = merchantErrorMessage(error, "無法更新權限。");
+      }
+      showMerchantToast(merchantErrorMessage(error, "無法更新權限。"));
+    }
+  }
+
   async function updateUserRole(userId, nextRole) {
-    if (!canManagePermissions()) return showMerchantToast("你沒有權限管理用戶身份。");
+    if (!hasPermission("usersRoleEdit")) return showMerchantToast("你沒有權限管理用戶身份。");
     const user = editableUserById(userId);
     const role = String(nextRole || "customer").trim();
     if (!user || !role) return showMerchantToast("找不到此用戶。");
@@ -895,7 +1050,7 @@
   }
 
   async function updateUserStatus(userId, status) {
-    if (!canManagePermissions()) return showMerchantToast("你沒有權限修改用戶狀態。");
+    if (!hasPermission("usersBlock")) return showMerchantToast("你沒有權限修改用戶狀態。");
     const user = editableUserById(userId);
     if (!user) return showMerchantToast("找不到此用戶。");
     if (!canSetUserStatus(user)) return showMerchantToast("你沒有權限修改此用戶狀態。");
@@ -929,20 +1084,29 @@
   }
 
   function renderOrders(orders) {
+    currentOrders = Array.isArray(orders) ? orders : [];
     const todaySales = document.querySelector("[data-today-sales]");
     const totalOrders = document.querySelector("[data-total-orders]");
     const totalSales = document.querySelector("[data-total-sales]");
     const message = document.querySelector("[data-orders-message]");
     const table = document.querySelector("[data-orders-table]");
     if (!todaySales || !totalOrders || !totalSales || !message || !table) return;
+    if (!hasPermission("ordersRead")) {
+      todaySales.textContent = "HK$0.00";
+      totalOrders.textContent = "0";
+      totalSales.textContent = "HK$0.00";
+      message.textContent = "你沒有查看訂單的權限。";
+      table.innerHTML = "";
+      return;
+    }
 
-    const todayTotal = orders.filter((order) => isToday(order.createdAt)).reduce((sum, order) => sum + orderAmount(order), 0);
-    const allTotal = orders.reduce((sum, order) => sum + orderAmount(order), 0);
+    const todayTotal = currentOrders.filter((order) => isToday(order.createdAt)).reduce((sum, order) => sum + orderAmount(order), 0);
+    const allTotal = currentOrders.reduce((sum, order) => sum + orderAmount(order), 0);
     todaySales.textContent = formatDashboardPrice(todayTotal);
-    totalOrders.textContent = String(orders.length);
+    totalOrders.textContent = String(currentOrders.length);
     totalSales.textContent = formatDashboardPrice(allTotal);
 
-    if (!orders.length) {
+    if (!currentOrders.length) {
       message.textContent = "暫時沒有訂單資料。";
       table.innerHTML = "";
       return;
@@ -955,7 +1119,7 @@
           <tr><th>訂單編號</th><th>顧客 email</th><th>金額</th><th>狀態</th><th>建立時間</th></tr>
         </thead>
         <tbody>
-          ${orders.slice(0, 20).map((order) => `
+          ${currentOrders.slice(0, 20).map((order) => `
             <tr>
               <td>${escapeHtml(order.orderNumber || order.id)}</td>
               <td>${escapeHtml(orderCustomerEmail(order))}</td>
@@ -984,17 +1148,26 @@
     } catch (error) {
       console.warn("無法同步目前商戶資料。", error);
     }
-    if (hasPermission("usersRead") && firebase.listenUsers) {
+    if (firebase.listenRolePermissions) {
+      dashboardUnsubscribers.push(firebase.listenRolePermissions((permissions) => {
+        currentRolePermissions = normalizeRolePermissions(permissions);
+        renderDashboard(user);
+        renderUsers(currentUsers);
+        renderUserInvites(currentInvites);
+        renderOrders(currentOrders);
+      }, renderPermissionsError));
+    }
+    if (canOpenUsersSection() && firebase.listenUsers) {
       dashboardUnsubscribers.push(firebase.listenUsers(renderUsers, renderUsersError));
     } else {
       renderUsers([]);
     }
-    if (canManageUsers() && firebase.listenUserInvites) {
+    if ((isSuperAdmin() || isAdmin()) && firebase.listenUserInvites) {
       dashboardUnsubscribers.push(firebase.listenUserInvites(renderUserInvites, renderUserInvitesError));
     } else {
       renderUserInvites([]);
     }
-    if (hasPermission("ordersRead") && firebase.listenOrders) {
+    if ((isSuperAdmin() || isAdmin()) && firebase.listenOrders) {
       dashboardUnsubscribers.push(firebase.listenOrders(renderOrders, renderOrdersError));
     } else {
       renderOrders([]);
@@ -1021,6 +1194,7 @@
     const list = document.querySelector("[data-merchant-products]");
     if (!list || !store) return;
     const products = store.loadProducts();
+    const canEditProducts = canManageProducts();
     if (!products.length) {
       list.innerHTML = '<p class="merchant-products__empty">目前沒有商品。</p>';
       return;
@@ -1037,9 +1211,11 @@
         <div class="merchant-product__meta"><span>價格</span><strong>HK$${Number(product.price || 0).toFixed(2)}</strong></div>
         <div class="merchant-product__meta"><span>存貨</span><strong>${Number(product.stock || 0)}</strong></div>
         <div class="merchant-product__actions">
-          <button type="button" data-edit-product="${escapeHtml(product.id)}">修改</button>
-          <button type="button" data-toggle-product="${escapeHtml(product.id)}" data-next-active="${product.isActive ? "false" : "true"}">${product.isActive ? "隱藏" : "上架"}</button>
-          <button class="is-danger" type="button" data-delete-product="${escapeHtml(product.id)}">刪除</button>
+          ${canEditProducts ? `
+            <button type="button" data-edit-product="${escapeHtml(product.id)}">修改</button>
+            <button type="button" data-toggle-product="${escapeHtml(product.id)}" data-next-active="${product.isActive ? "false" : "true"}">${product.isActive ? "隱藏" : "上架"}</button>
+            <button class="is-danger" type="button" data-delete-product="${escapeHtml(product.id)}">刪除</button>
+          ` : "<span>只可查看</span>"}
         </div>
       </article>`).join("");
   }
@@ -1564,6 +1740,7 @@
     const previewTrigger = event.target.closest("[data-open-store-preview]");
     if (previewTrigger) {
       event.preventDefault();
+      if (!hasPermission("storePreview")) return showMerchantToast("你沒有預覽店鋪的權限。");
       window.open(storefrontPreviewUrl(), "_blank", "noopener");
       return;
     }
@@ -1584,6 +1761,7 @@
     const sectionButton = event.target.closest("[data-merchant-section]");
     if (sectionButton) {
       const section = sectionButton.dataset.merchantSection;
+      activeDashboardSection = section;
       document.querySelectorAll("[data-merchant-section]").forEach((button) => {
         button.classList.toggle("is-active", button === sectionButton);
       });
@@ -1593,14 +1771,19 @@
       return;
     }
 
-    if (event.target.closest("[data-manage-categories]")) return openCategoryManager();
+    if (event.target.closest("[data-manage-categories]")) {
+      if (!hasPermission("categoriesManage")) return showMerchantToast("你沒有分類管理權限。");
+      return openCategoryManager();
+    }
     if (event.target.closest("[data-add-category]")) {
+      if (!hasPermission("categoriesManage")) return showMerchantToast("你沒有分類管理權限。");
       syncCategoryDraftFromDom();
       categoryDraft.push(store.normalizeCategory({ id: store.newId("category"), name: "新增大分類", order: categoryDraft.length, subcategories: [] }));
       return renderCategoryManager();
     }
     const addSubcategoryButton = event.target.closest("[data-add-subcategory]");
     if (addSubcategoryButton) {
+      if (!hasPermission("categoriesManage")) return showMerchantToast("你沒有分類管理權限。");
       syncCategoryDraftFromDom();
       const category = categoryDraft.find((item) => item.id === addSubcategoryButton.dataset.addSubcategory);
       if (category) category.subcategories.push({ id: store.newId("subcategory"), name: "新增小分類", slug: "new-subcategory", order: category.subcategories.length });
@@ -1608,21 +1791,38 @@
     }
     const deleteCategoryButton = event.target.closest("[data-delete-category]");
     if (deleteCategoryButton) {
+      if (!hasPermission("categoriesManage")) return showMerchantToast("你沒有分類管理權限。");
       syncCategoryDraftFromDom();
       categoryDraft = categoryDraft.filter((category) => category.id !== deleteCategoryButton.dataset.deleteCategory || category.system);
       return renderCategoryManager();
     }
     const deleteSubcategoryButton = event.target.closest("[data-delete-subcategory]");
     if (deleteSubcategoryButton) {
+      if (!hasPermission("categoriesManage")) return showMerchantToast("你沒有分類管理權限。");
       syncCategoryDraftFromDom();
       const category = categoryDraft.find((item) => item.id === deleteSubcategoryButton.dataset.parentCategory);
       if (category) category.subcategories = category.subcategories.filter((subcategory) => subcategory.id !== deleteSubcategoryButton.dataset.deleteSubcategory);
       return renderCategoryManager();
     }
-    if (event.target.closest("[data-save-categories]")) return saveCategoryManager();
-    if (event.target.closest("[data-add-product]")) return openEditor();
+    if (event.target.closest("[data-save-categories]")) {
+      if (!hasPermission("categoriesManage")) return showMerchantToast("你沒有分類管理權限。");
+      return saveCategoryManager();
+    }
+    if (event.target.closest("[data-add-product]")) {
+      if (!canManageProducts()) return showMerchantToast("你沒有產品管理權限。");
+      return openEditor();
+    }
     const editUserButton = event.target.closest("[data-edit-user]");
     if (editUserButton) return openUserEditor(editUserButton.dataset.editUser);
+    const rolePermissionToggle = event.target.closest("[data-role-permission-toggle]");
+    if (rolePermissionToggle) {
+      return updateRolePermission(
+        rolePermissionToggle.dataset.feature,
+        rolePermissionToggle.dataset.role,
+        rolePermissionToggle.checked,
+        rolePermissionToggle
+      );
+    }
     const roleToggle = event.target.closest("[data-user-role-toggle]");
     if (roleToggle) {
       const user = editableUserById(roleToggle.dataset.userRoleToggle);
@@ -1651,7 +1851,10 @@
       return renderUsers(currentUsers);
     }
     const editButton = event.target.closest("[data-edit-product]");
-    if (editButton) return openEditor(editButton.dataset.editProduct);
+    if (editButton) {
+      if (!canManageProducts()) return showMerchantToast("你沒有產品管理權限。");
+      return openEditor(editButton.dataset.editProduct);
+    }
     const removeImage = event.target.closest("[data-remove-editor-image]");
     if (removeImage) {
       const image = editorImages.find((item) => item.id === removeImage.dataset.removeEditorImage);
@@ -1663,6 +1866,7 @@
 
     const toggleButton = event.target.closest("[data-toggle-product]");
     if (toggleButton && currentMerchant) {
+      if (!canManageProducts()) return showMerchantToast("你沒有產品管理權限。");
       const nextActive = toggleButton.dataset.nextActive === "true";
       const originalText = toggleButton.textContent;
       toggleButton.disabled = true;
@@ -1681,7 +1885,10 @@
       return;
     }
     const deleteButton = event.target.closest("[data-delete-product]");
-    if (deleteButton) return openDeleteConfirmation(deleteButton.dataset.deleteProduct);
+    if (deleteButton) {
+      if (!canManageProducts()) return showMerchantToast("你沒有產品管理權限。");
+      return openDeleteConfirmation(deleteButton.dataset.deleteProduct);
+    }
     if (event.target.closest("[data-confirm-delete]") && deletingProductId) {
       const button = event.target.closest("[data-confirm-delete]");
       button.disabled = true;

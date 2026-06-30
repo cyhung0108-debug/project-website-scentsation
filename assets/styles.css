@@ -552,6 +552,45 @@
   margin: 0 0 8px;
 }
 
+.merchant-permissions-table {
+  min-width: 980px;
+}
+
+.merchant-permissions-table th,
+.merchant-permissions-table td {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.merchant-permissions-table th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 210px;
+  text-align: left;
+  background: #faf8f4;
+}
+
+.merchant-permissions-table tbody th:first-child {
+  background: #fff;
+}
+
+.merchant-permissions-table small {
+  display: block;
+  margin-top: 4px;
+  color: #8a8176;
+  font-size: 11px;
+}
+
+.merchant-permissions-table .is-disabled {
+  background: #f2f0eb;
+  color: #9b9388;
+}
+
+.merchant-permissions-table .is-disabled .merchant-switch {
+  opacity: 0.6;
+}
+
 .merchant-user-form {
   border: 0;
   padding: 0;

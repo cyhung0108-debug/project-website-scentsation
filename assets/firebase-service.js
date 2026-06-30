@@ -1,11 +1,11 @@
-(function () {
+﻿(function () {
   const config = window.ONLINE_SHOP_FIREBASE_CONFIG;
   const sdkVersion = "12.15.0";
   const sdkBaseUrl = `https://www.gstatic.com/firebasejs/${sdkVersion}`;
   const databaseId = "scentsation";
   window.onlineShopFirebaseReady = (async function initializeFirebase() {
     if (!config?.apiKey || !config?.projectId || !config?.appId || !config?.storageBucket) {
-      throw new Error("Firebase Web App 設定不完整。請檢查 assets/firebase-config.js。");
+      throw new Error("Firebase Web App 設定不完整，請檢查 assets/firebase-config.js。");
     }
 
     const [appSdk, authSdk, firestoreSdk, storageSdk] = await Promise.all([
@@ -74,6 +74,51 @@
       };
     }
 
+    const rolePermissionFeatures = [
+      "usersManage",
+      "inviteUsers",
+      "inviteRecords",
+      "salesManage",
+      "productsManage",
+      "categoriesManage",
+      "pagesManage",
+      "permissionsManage",
+      "storePreview",
+      "usersBlock",
+      "viewUserDetails",
+      "usersRoleEdit",
+      "usersProfileEdit",
+      "ordersRead",
+      "ordersUpdate"
+    ];
+
+    const rolePermissionKeys = ["super_admin", "admin", "staff", "customer"];
+
+    function getDefaultRolePermissions() {
+      const permissions = {};
+      rolePermissionFeatures.forEach((feature) => {
+        permissions[feature] = {
+          super_admin: true,
+          admin: true,
+          staff: ["productsManage", "categoriesManage", "pagesManage", "storePreview", "viewUserDetails"].includes(feature),
+          customer: false
+        };
+      });
+      return permissions;
+    }
+
+    function normalizeRolePermissions(data) {
+      const defaults = getDefaultRolePermissions();
+      const source = data?.permissions && typeof data.permissions === "object" ? data.permissions : {};
+      rolePermissionFeatures.forEach((feature) => {
+        const row = source[feature] && typeof source[feature] === "object" ? source[feature] : {};
+        rolePermissionKeys.forEach((role) => {
+          defaults[feature][role] = row[role] === undefined ? defaults[feature][role] : row[role] === true;
+        });
+      });
+      return defaults;
+    }
+
     function normalizeMerchantRole(snapshot) {
       if (!snapshot.exists()) return null;
       const data = snapshot.data() || {};
@@ -114,6 +159,30 @@
       return normalizeMerchantRole(await firestoreSdk.getDoc(roleRef));
     }
 
+    function listenRolePermissions(callback, onError) {
+      return firestoreSdk.onSnapshot(
+        firestoreSdk.doc(db, "settings", "rolePermissions"),
+        (snapshot) => callback(normalizeRolePermissions(snapshot.exists() ? snapshot.data() : null)),
+        onError
+      );
+    }
+
+    async function updateRolePermission(featureKey, roleKey, value) {
+      const feature = String(featureKey || "").trim();
+      const role = String(roleKey || "").trim();
+      if (!rolePermissionFeatures.includes(feature) || !rolePermissionKeys.includes(role)) {
+        throw new Error("權限設定不正確。");
+      }
+      const rolePermissionRef = firestoreSdk.doc(db, "settings", "rolePermissions");
+      const snapshot = await firestoreSdk.getDoc(rolePermissionRef);
+      const permissions = normalizeRolePermissions(snapshot.exists() ? snapshot.data() : null);
+      permissions[feature][role] = value === true;
+      await firestoreSdk.setDoc(rolePermissionRef, {
+        permissions,
+        updatedAt: firestoreSdk.serverTimestamp(),
+        updatedBy: auth.currentUser?.uid || ""
+      }, { merge: false });
+    }
     async function getUserProfile(uid) {
       if (!uid) return null;
       const snapshot = await firestoreSdk.getDoc(firestoreSdk.doc(db, "users", String(uid)));
@@ -165,7 +234,7 @@
 
     async function updateUserProfile(userId, updates) {
       const uid = String(userId || "").trim();
-      if (!uid) throw new Error("缺少用戶 UID。");
+      if (!uid) throw new Error("找不到用戶 UID。");
       const allowed = {};
       if ("displayName" in updates) allowed.displayName = String(updates.displayName || "").trim();
       if ("phone" in updates) allowed.phone = String(updates.phone || "").trim();
@@ -185,7 +254,7 @@
 
     async function updateUserAccess(userId, updates) {
       const uid = String(userId || "").trim();
-      if (!uid) throw new Error("請提供用戶 UID。");
+      if (!uid) throw new Error("找不到用戶 UID。");
       const allowed = {};
       if ("role" in updates) allowed.role = normalizeRole(updates.role);
       if ("status" in updates) allowed.status = String(updates.status || "active").trim() || "active";
@@ -227,7 +296,7 @@
       const normalizedEmail = String(email || "").trim().toLowerCase();
       const normalizedRole = normalizeRole(role);
       if (!normalizedEmail) throw new Error("請輸入邀請電郵。");
-      if (!["admin", "staff"].includes(normalizedRole)) throw new Error("邀請身份不正確。");
+      if (!["admin", "staff"].includes(normalizedRole)) throw new Error("只能邀請管理員或員工。");
       const token = generateInviteToken();
       const payload = {
         email: normalizedEmail,
@@ -244,11 +313,11 @@
 
     async function acceptUserInvite(token, user) {
       const normalizedToken = String(token || "").trim();
-      if (!normalizedToken || !user?.uid) throw new Error("邀請連結無效。");
+      if (!normalizedToken || !user?.uid) throw new Error("邀請資料不完整。");
       const invite = await getUserInvite(normalizedToken);
       const userEmail = String(user.email || "").trim().toLowerCase();
-      if (!invite || invite.used || invite.status !== "pending") throw new Error("邀請已失效。");
-      if (invite.email !== userEmail) throw new Error("註冊電郵與邀請電郵不相符。");
+      if (!invite || invite.used || invite.status !== "pending") throw new Error("邀請連結無效或已使用。");
+      if (invite.email !== userEmail) throw new Error("註冊電郵與邀請電郵不一致。");
       const batch = firestoreSdk.writeBatch(db);
       const now = firestoreSdk.serverTimestamp();
       const userRef = firestoreSdk.doc(db, "users", String(user.uid));
@@ -290,7 +359,7 @@
 
     async function hideOrDeleteUserInvite(inviteId) {
       const normalizedId = String(inviteId || "").trim();
-      if (!normalizedId) throw new Error("缺少邀請記錄 ID。");
+      if (!normalizedId) throw new Error("找不到邀請記錄 ID。");
       const allowed = {
         status: "deleted",
         hidden: true,
@@ -302,7 +371,7 @@
 
     async function updateCurrentUserProfile(updates) {
       const user = auth.currentUser;
-      if (!user?.uid) throw new Error("目前尚未登入。");
+      if (!user?.uid) throw new Error("請先登入。");
       const uid = String(user.uid);
       const allowed = {};
       const nextDisplayName = "displayName" in updates ? String(updates.displayName || "").trim() : null;
@@ -322,8 +391,8 @@
     async function updateCurrentUserEmail(newEmail) {
       const user = auth.currentUser;
       const email = String(newEmail || "").trim();
-      if (!user?.uid) throw new Error("目前尚未登入。");
-      if (!email) throw new Error("請輸入電郵地址。");
+      if (!user?.uid) throw new Error("請先登入。");
+      if (!email) throw new Error("請輸入電郵。");
       await authSdk.updateEmail(user, email);
       await firestoreSdk.setDoc(
         firestoreSdk.doc(db, "users", String(user.uid)),
@@ -429,7 +498,7 @@
 
     async function updateOrder(orderId, updates) {
       const normalizedId = String(orderId || "").trim();
-      if (!normalizedId) throw new Error("請提供訂單編號。");
+      if (!normalizedId) throw new Error("找不到訂單 ID。");
       const allowed = {};
       if ("status" in updates) allowed.status = String(updates.status || "").trim() || "pending";
       if ("merchantNote" in updates) allowed.merchantNote = String(updates.merchantNote || "").trim();
@@ -571,6 +640,9 @@
       deleteProduct,
       saveCategoryChanges,
       getMerchantRole,
+      getDefaultRolePermissions,
+      listenRolePermissions,
+      updateRolePermission,
       getUserProfile,
       upsertCurrentUserProfile,
       updateUserProfile,

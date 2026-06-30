@@ -65,6 +65,31 @@ service cloud.firestore {
       return isSuperAdmin() || isAdmin();
     }
 
+    function settingsPath() {
+      return /databases/$(database)/documents/settings/rolePermissions;
+    }
+
+    function rolePermissionsDocExists() {
+      return exists(settingsPath());
+    }
+
+    function settingsRoleFlag(feature, role) {
+      return rolePermissionsDocExists()
+        && get(settingsPath()).data.permissions[feature] is map
+        && get(settingsPath()).data.permissions[feature][role] == true;
+    }
+
+    function canViewUserDetails() {
+      return canManageUsers()
+        || (
+          isStaff()
+          && (
+            !rolePermissionsDocExists()
+            || settingsRoleFlag("viewUserDetails", "staff")
+          )
+        );
+    }
+
     function canManagePermissions() {
       return isSuperAdmin() || isAdmin();
     }
@@ -146,6 +171,25 @@ service cloud.firestore {
         ]);
     }
 
+    function validStaffUserNoteUpdate() {
+      return canViewUserDetails()
+        && isStaff()
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.providerId == resource.data.providerId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.displayName == resource.data.displayName
+        && request.resource.data.phone == resource.data.phone
+        && request.resource.data.address == resource.data.address
+        && request.resource.data.birthday == resource.data.birthday
+        && request.resource.data.gender == resource.data.gender
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "note", "updatedAt"
+        ]);
+    }
+
     function validPermissionUpdate() {
       return canManagePermissions()
         && request.resource.data.uid == resource.data.uid
@@ -215,6 +259,105 @@ service cloud.firestore {
         ]);
     }
 
+    function rolePermissionFeatureKeys() {
+      return [
+        "usersManage", "inviteUsers", "inviteRecords", "salesManage",
+        "productsManage", "categoriesManage", "pagesManage", "permissionsManage",
+        "storePreview", "usersBlock", "viewUserDetails", "usersRoleEdit", "usersProfileEdit",
+        "ordersRead", "ordersUpdate"
+      ];
+    }
+
+    function rolePermissionRoleKeys() {
+      return ["super_admin", "admin", "staff", "customer"];
+    }
+
+    function validRolePermissionRow(row) {
+      return row is map
+        && row.keys().hasAll(rolePermissionRoleKeys())
+        && row.keys().hasOnly(rolePermissionRoleKeys())
+        && row.super_admin is bool
+        && row.admin is bool
+        && row.staff is bool
+        && row.customer is bool;
+    }
+
+    function validRolePermissionDocument() {
+      return request.resource.data.keys().hasOnly(["permissions", "updatedAt", "updatedBy"])
+        && request.resource.data.permissions is map
+        && request.resource.data.permissions.keys().hasAll(rolePermissionFeatureKeys())
+        && request.resource.data.permissions.keys().hasOnly(rolePermissionFeatureKeys())
+        && validRolePermissionRow(request.resource.data.permissions.usersManage)
+        && validRolePermissionRow(request.resource.data.permissions.inviteUsers)
+        && validRolePermissionRow(request.resource.data.permissions.inviteRecords)
+        && validRolePermissionRow(request.resource.data.permissions.salesManage)
+        && validRolePermissionRow(request.resource.data.permissions.productsManage)
+        && validRolePermissionRow(request.resource.data.permissions.categoriesManage)
+        && validRolePermissionRow(request.resource.data.permissions.pagesManage)
+        && validRolePermissionRow(request.resource.data.permissions.permissionsManage)
+        && validRolePermissionRow(request.resource.data.permissions.storePreview)
+        && validRolePermissionRow(request.resource.data.permissions.usersBlock)
+        && validRolePermissionRow(request.resource.data.permissions.viewUserDetails)
+        && validRolePermissionRow(request.resource.data.permissions.usersRoleEdit)
+        && validRolePermissionRow(request.resource.data.permissions.usersProfileEdit)
+        && validRolePermissionRow(request.resource.data.permissions.ordersRead)
+        && validRolePermissionRow(request.resource.data.permissions.ordersUpdate)
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.updatedBy == request.auth.uid;
+    }
+
+    function superAdminPermissionsAreTrue() {
+      return request.resource.data.permissions.usersManage.super_admin == true
+        && request.resource.data.permissions.inviteUsers.super_admin == true
+        && request.resource.data.permissions.inviteRecords.super_admin == true
+        && request.resource.data.permissions.salesManage.super_admin == true
+        && request.resource.data.permissions.productsManage.super_admin == true
+        && request.resource.data.permissions.categoriesManage.super_admin == true
+        && request.resource.data.permissions.pagesManage.super_admin == true
+        && request.resource.data.permissions.permissionsManage.super_admin == true
+        && request.resource.data.permissions.storePreview.super_admin == true
+        && request.resource.data.permissions.usersBlock.super_admin == true
+        && request.resource.data.permissions.viewUserDetails.super_admin == true
+        && request.resource.data.permissions.usersRoleEdit.super_admin == true
+        && request.resource.data.permissions.usersProfileEdit.super_admin == true
+        && request.resource.data.permissions.ordersRead.super_admin == true
+        && request.resource.data.permissions.ordersUpdate.super_admin == true;
+    }
+
+    function superAdminPermissionsUnchanged() {
+      return request.resource.data.permissions.usersManage.super_admin == resource.data.permissions.usersManage.super_admin
+        && request.resource.data.permissions.inviteUsers.super_admin == resource.data.permissions.inviteUsers.super_admin
+        && request.resource.data.permissions.inviteRecords.super_admin == resource.data.permissions.inviteRecords.super_admin
+        && request.resource.data.permissions.salesManage.super_admin == resource.data.permissions.salesManage.super_admin
+        && request.resource.data.permissions.productsManage.super_admin == resource.data.permissions.productsManage.super_admin
+        && request.resource.data.permissions.categoriesManage.super_admin == resource.data.permissions.categoriesManage.super_admin
+        && request.resource.data.permissions.pagesManage.super_admin == resource.data.permissions.pagesManage.super_admin
+        && request.resource.data.permissions.permissionsManage.super_admin == resource.data.permissions.permissionsManage.super_admin
+        && request.resource.data.permissions.storePreview.super_admin == resource.data.permissions.storePreview.super_admin
+        && request.resource.data.permissions.usersBlock.super_admin == resource.data.permissions.usersBlock.super_admin
+        && request.resource.data.permissions.viewUserDetails.super_admin == resource.data.permissions.viewUserDetails.super_admin
+        && request.resource.data.permissions.usersRoleEdit.super_admin == resource.data.permissions.usersRoleEdit.super_admin
+        && request.resource.data.permissions.usersProfileEdit.super_admin == resource.data.permissions.usersProfileEdit.super_admin
+        && request.resource.data.permissions.ordersRead.super_admin == resource.data.permissions.ordersRead.super_admin
+        && request.resource.data.permissions.ordersUpdate.super_admin == resource.data.permissions.ordersUpdate.super_admin;
+    }
+
+    function validRolePermissionsCreate() {
+      return validRolePermissionDocument()
+        && (
+          isSuperAdmin()
+          || (isAdmin() && superAdminPermissionsAreTrue())
+        );
+    }
+
+    function validRolePermissionsUpdate() {
+      return validRolePermissionDocument()
+        && (
+          isSuperAdmin()
+          || (isAdmin() && superAdminPermissionsUnchanged())
+        );
+    }
+
     function validOrderOwnerRead() {
       return isSignedIn()
         && (
@@ -255,9 +398,9 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || canManageUsers();
+      allow read: if isOwner(userId) || canViewUserDetails();
       allow create: if validUserCreate(userId);
-      allow update: if validUserSelfUpdate(userId) || validInviteUserUpdate(userId) || validAdminUserUpdate() || validPermissionUpdate();
+      allow update: if validUserSelfUpdate(userId) || validInviteUserUpdate(userId) || validAdminUserUpdate() || validStaffUserNoteUpdate() || validPermissionUpdate();
       allow delete: if false;
 
       match /cart/{itemId} {
@@ -270,6 +413,13 @@ service cloud.firestore {
         || (resource.data.used == false && resource.data.status == "pending");
       allow create: if validInviteCreate(token);
       allow update: if validInviteUse(token) || validInviteHideOrDelete(token);
+      allow delete: if false;
+    }
+
+    match /settings/{docId} {
+      allow read: if docId == "rolePermissions" && canAccessDashboard();
+      allow create: if docId == "rolePermissions" && validRolePermissionsCreate();
+      allow update: if docId == "rolePermissions" && validRolePermissionsUpdate();
       allow delete: if false;
     }
 
