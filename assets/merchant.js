@@ -391,7 +391,8 @@
   function renderMerchantDashboardShell(user) {
     if (!container) return;
     document.title = "\u5546\u6236\u5f8c\u53f0 - APOTHEKE";
-    if (!hasPermission("inviteRecords") && usersSubsection === "invites") usersSubsection = "list";
+    const showUsersSubtabs = canManageUsers();
+    if ((!showUsersSubtabs || !hasPermission("inviteRecords")) && usersSubsection === "invites") usersSubsection = "list";
     const sections = [
       canOpenUsersSection() ? { id: "users", label: "\u7528\u6236\u7ba1\u7406" } : null,
       canReadSales() ? { id: "sales", label: "\u92b7\u552e\u7ba1\u7406" } : null,
@@ -418,10 +419,10 @@
           <section class="merchant-dashboard-section ${activeSection === "users" ? "is-active" : ""}" data-merchant-panel="users">
             <h1>\u7528\u6236\u7ba1\u7406</h1>
             <div class="merchant-data-panel" data-users-panel>
-              <div class="merchant-subtabs" data-users-subtabs>
+              ${showUsersSubtabs ? `<div class="merchant-subtabs" data-users-subtabs>
                 <button class="merchant-subtabs__button ${usersSubsection === "list" ? "is-active" : ""}" type="button" data-users-subtab="list">用戶列表</button>
                 ${hasPermission("inviteRecords") ? `<button class="merchant-subtabs__button ${usersSubsection === "invites" ? "is-active" : ""}" type="button" data-users-subtab="invites">邀請記錄</button>` : ""}
-              </div>
+              </div>` : ""}
               <section class="merchant-subpanel ${usersSubsection === "list" ? "is-active" : ""}" data-users-subpanel="list">
               <div class="merchant-stat-grid">
                 <article class="merchant-stat-card"><span>\u7e3d\u7528\u6236\u6578</span><strong data-total-users>0</strong></article>

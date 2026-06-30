@@ -496,6 +496,43 @@
       return listenCurrentUserOrders(userId, email, callback, onError);
     }
 
+    async function createOrder(orderData) {
+      const payload = {
+        orderNumber: String(orderData.orderNumber || "").trim(),
+        customerUid: String(orderData.customerUid || "").trim(),
+        customerEmail: String(orderData.customerEmail || "").trim(),
+        customerName: String(orderData.customerName || "").trim(),
+        customerPhone: String(orderData.customerPhone || "").trim(),
+        recipientName: String(orderData.recipientName || "").trim(),
+        recipientPhone: String(orderData.recipientPhone || "").trim(),
+        deliveryMethod: orderData.deliveryMethod === "delivery" ? "delivery" : "pickup",
+        deliveryAddress: String(orderData.deliveryAddress || "").trim(),
+        items: Array.isArray(orderData.items) ? orderData.items : [],
+        subtotal: Number(orderData.subtotal || 0),
+        discount: Number(orderData.discount || 0),
+        shippingFee: Number(orderData.shippingFee || 0),
+        extraFee: Number(orderData.extraFee || 0),
+        total: Number(orderData.total || 0),
+        paymentMethod: "credit_card",
+        paymentStatus: "mock_paid",
+        status: "pending",
+        note: String(orderData.note || "").trim(),
+        createdAt: firestoreSdk.serverTimestamp()
+      };
+      if (!payload.orderNumber) throw new Error("訂單編號無效。");
+      if (!payload.customerUid) throw new Error("請先登入再提交訂單。");
+      if (!payload.customerEmail) throw new Error("請填寫顧客電郵。");
+      if (!payload.customerName) throw new Error("請填寫顧客名稱。");
+      if (!payload.recipientName) throw new Error("請填寫收件人名稱。");
+      if (!payload.recipientPhone) throw new Error("請填寫收件人聯絡電話。");
+      if (payload.deliveryMethod === "delivery" && !payload.deliveryAddress) {
+        throw new Error("送貨上門需要填寫收貨地址。");
+      }
+      if (!payload.items.length) throw new Error("購物車暫時沒有商品。");
+      const docRef = await firestoreSdk.addDoc(firestoreSdk.collection(db, "orders"), payload);
+      return { id: docRef.id, ...payload };
+    }
+
     async function updateOrder(orderId, updates) {
       const normalizedId = String(orderId || "").trim();
       if (!normalizedId) throw new Error("找不到訂單 ID。");
@@ -654,6 +691,7 @@
       listenOrders,
       listenCurrentUserOrders,
       listenOrdersByCustomer,
+      createOrder,
       updateOrder,
       createUserInvite,
       listenUserInvites,

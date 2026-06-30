@@ -370,6 +370,22 @@ service cloud.firestore {
         );
     }
 
+    function validOrderCustomerCreate() {
+      return isSignedIn()
+        && isActiveUser()
+        && request.resource.data.customerUid == request.auth.uid
+        && request.resource.data.status == "pending"
+        && request.resource.data.paymentMethod == "credit_card"
+        && request.resource.data.paymentStatus == "mock_paid"
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.keys().hasOnly([
+          "orderNumber", "customerUid", "customerEmail", "customerName", "customerPhone",
+          "recipientName", "recipientPhone", "deliveryMethod", "deliveryAddress",
+          "items", "subtotal", "discount", "shippingFee", "extraFee", "total",
+          "paymentMethod", "paymentStatus", "status", "note", "createdAt"
+        ]);
+    }
+
     function validOrderMerchantUpdate() {
       return canReadSales()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -425,7 +441,8 @@ service cloud.firestore {
 
     match /orders/{orderId} {
       allow read: if validOrderOwnerRead() || canReadSales();
-      allow create, delete: if canReadSales();
+      allow create: if validOrderCustomerCreate() || canReadSales();
+      allow delete: if canReadSales();
       allow update: if validOrderMerchantUpdate();
     }
 

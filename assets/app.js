@@ -1,5 +1,6 @@
 (function () {
   const CART_KEY = "onlineShopCart";
+  const CHECKOUT_DRAFT_KEY = "onlineShopCheckoutDraft";
   const LEGACY_USERS_KEY = "onlineShopUsers";
   const products = Array.isArray(window.ONLINE_SHOP_PRODUCTS) ? window.ONLINE_SHOP_PRODUCTS : [];
   const siteConfig = window.ONLINE_SHOP_SITE_CONFIG || {};
@@ -21,6 +22,7 @@
     currentUser: null,
     currentUserProfile: null,
     currentUserOrders: [],
+    orderConfirmation: null,
     priceMin: 0,
     priceMax: 0,
     priceLimit: 0,
@@ -99,6 +101,14 @@
   function profileUrl(tab = "profile") {
     const normalizedTab = ["profile", "orders", "security"].includes(tab) ? tab : "profile";
     return `${rootPrefix()}profile.html?tab=${encodeURIComponent(normalizedTab)}`;
+  }
+
+  function cartUrl() {
+    return `${rootPrefix()}cart.html`;
+  }
+
+  function checkoutUrl() {
+    return `${rootPrefix()}checkout.html`;
   }
 
   function getProfileTabFromUrl() {
@@ -453,6 +463,11 @@
           state.currentUserOrders = [];
           setCurrentUserFromFirebase(null);
           renderProfilePage();
+          renderCheckoutPage();
+          if (document.body?.dataset.page === "checkout") {
+            window.location.replace(`${rootPrefix()}index.html?auth=login&redirect=checkout`);
+            return;
+          }
           if (state.authEntryRequested) {
             state.authEntryRequested = false;
             openAuthModal(state.authEntryMode || "login");
@@ -544,6 +559,13 @@
           return;
         }
 
+        if (normalizedUser && state.authRedirect === "checkout") {
+          state.authRedirect = "";
+          closeAuthModal();
+          window.location.replace(checkoutUrl());
+          return;
+        }
+
         if (document.body?.dataset.page === "profile") {
           currentUserOrdersUnsub = firebase.listenCurrentUserOrders?.(
             user.uid,
@@ -567,6 +589,7 @@
         }
 
         renderProfilePage();
+        renderCheckoutPage();
       });
     } catch (error) {
       console.error("Firebase Authentication \u521d\u59cb\u5316\u5931\u6557\u3002", error);
@@ -922,11 +945,376 @@
         const product = findProduct(item.productId);
         if (!product) return totals;
         totals.quantity += item.quantity;
-        totals.amount += product.price * item.quantity;
+        totals.amount += getNumericPrice(product.price) * item.quantity;
         return totals;
       },
       { quantity: 0, amount: 0 }
     );
+  }
+
+  function loadCheckoutDraft() {
+    try {
+      const raw = window.localStorage.getItem(CHECKOUT_DRAFT_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (error) {
+      return {};
+    }
+  }
+
+  function saveCheckoutDraft(updates = {}) {
+    const draft = { ...loadCheckoutDraft(), ...updates };
+    window.localStorage.setItem(CHECKOUT_DRAFT_KEY, JSON.stringify(draft));
+    return draft;
+  }
+
+  function clearCheckoutDraft() {
+    window.localStorage.removeItem(CHECKOUT_DRAFT_KEY);
+  }
+
+  function getCartLineItems() {
+    return state.cart
+      .map((item) => {
+        const product = findProduct(item.productId);
+        if (!product) return null;
+        const price = getNumericPrice(product.price);
+        const quantity = Math.max(1, Number.parseInt(item.quantity, 10) || 1);
+        return {
+          productId: product.id,
+          name: product.name,
+          image: getProductPrimaryImage(product),
+          option: item.option || item.color || product.option || product.color || "",
+          price,
+          quantity,
+          subtotal: price * quantity
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function checkoutTotals(draft = loadCheckoutDraft()) {
+    const items = getCartLineItems();
+    const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+    const discount = 0;
+    const deliveryMethod = draft.deliveryMethod === "delivery" ? "delivery" : "pickup";
+    const shippingFee = deliveryMethod === "delivery" ? 30 : 0;
+    const extraFee = 0;
+    return {
+      items,
+      subtotal,
+      discount,
+      deliveryMethod,
+      shippingFee,
+      extraFee,
+      total: Math.max(0, subtotal - discount + shippingFee + extraFee)
+    };
+  }
+
+  function renderCheckoutSteps(activeStep = "cart") {
+    const steps = [
+      { key: "cart", label: "購物車" },
+      { key: "details", label: "填寫資料" },
+      { key: "confirm", label: "訂單確認" }
+    ];
+    return `
+      <ol class="checkout-steps" aria-label="結帳流程">
+        ${steps.map((step, index) => `
+          <li class="${step.key === activeStep ? "is-active" : ""}">
+            <span>${index + 1}</span>
+            <strong>${step.label}</strong>
+          </li>
+        `).join("")}
+      </ol>
+    `;
+  }
+
+  function renderCartPage() {
+    const container = $("[data-cart-page]");
+    if (!container) return;
+    loadCart();
+    const draft = loadCheckoutDraft();
+    const totals = checkoutTotals(draft);
+    if (!totals.items.length) {
+      container.innerHTML = `
+        ${renderCheckoutSteps("cart")}
+        <section class="cart-page cart-page--empty">
+          <h1>購物車</h1>
+          <p>購物車暫時沒有商品</p>
+          <a class="checkout-secondary-button" href="${listUrl()}">繼續購物</a>
+        </section>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      ${renderCheckoutSteps("cart")}
+      <section class="cart-page">
+        <div class="cart-page__main">
+          <h1>購物車</h1>
+          <div class="cart-page__items">
+            ${totals.items.map((item) => `
+              <article class="cart-page-item">
+                <a class="cart-page-item__image" href="${productUrl(item.productId)}">
+                  <img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}">
+                </a>
+                <div class="cart-page-item__content">
+                  <a class="cart-page-item__title" href="${productUrl(item.productId)}">${escapeHtml(item.name)}</a>
+                  ${item.option ? `<p class="cart-page-item__option">${escapeHtml(item.option)}</p>` : ""}
+                  <p class="cart-page-item__price">${formatPrice(item.price)}</p>
+                </div>
+                <div class="cart-page-item__quantity" aria-label="${escapeHtml(item.name)} 數量">
+                  <button type="button" data-cart-action="decrease" data-product-id="${escapeHtml(item.productId)}">-</button>
+                  <input type="number" min="1" value="${item.quantity}" data-cart-quantity data-product-id="${escapeHtml(item.productId)}">
+                  <button type="button" data-cart-action="increase" data-product-id="${escapeHtml(item.productId)}">+</button>
+                </div>
+                <p class="cart-page-item__subtotal">${formatPrice(item.subtotal)}</p>
+                <button class="cart-page-item__remove" type="button" data-cart-action="remove" data-product-id="${escapeHtml(item.productId)}">刪除</button>
+              </article>
+            `).join("")}
+          </div>
+          <label class="checkout-note">
+            <span>訂單備註</span>
+            <textarea rows="5" data-checkout-note placeholder="如有送禮、包裝或其他備註，請在這裡填寫。">${escapeHtml(draft.note || "")}</textarea>
+          </label>
+        </div>
+        <aside class="cart-page__summary">
+          <h2>訂單摘要</h2>
+          <p><span>商品小計</span><strong>${formatPrice(totals.subtotal)}</strong></p>
+          <p><span>優惠扣減</span><strong>-${formatPrice(totals.discount)}</strong></p>
+          <p class="cart-page__promo">${totals.items.reduce((sum, item) => sum + item.quantity, 0) < 2 ? "再買 1 件 即享有優惠" : "暫未套用優惠"}</p>
+          <p class="cart-page__total"><span>合計</span><strong>${formatPrice(totals.subtotal - totals.discount)}</strong></p>
+          <button class="checkout-button cart-page__checkout" type="button" data-go-checkout>確認訂單</button>
+        </aside>
+      </section>
+    `;
+  }
+
+  function checkoutDefaults() {
+    const draft = loadCheckoutDraft();
+    const profile = state.currentUserProfile || {};
+    const currentUser = state.currentUser || {};
+    return {
+      customerName: draft.customerName || profile.displayName || currentUser.displayName || "",
+      customerEmail: draft.customerEmail || profile.email || currentUser.email || "",
+      customerPhone: draft.customerPhone || profile.phone || "",
+      recipientName: draft.recipientName || "",
+      recipientPhone: draft.recipientPhone || "",
+      deliveryMethod: draft.deliveryMethod === "delivery" ? "delivery" : "pickup",
+      deliveryAddress: draft.deliveryAddress || profile.address || "",
+      sameAsCustomer: draft.sameAsCustomer === true,
+      note: draft.note || ""
+    };
+  }
+
+  function generateOrderNumber() {
+    const now = new Date();
+    const datePart = now.toISOString().slice(0, 10).replace(/-/g, "");
+    return `SC${datePart}${String(now.getTime()).slice(-6)}`;
+  }
+
+  function renderOrderConfirmation(order) {
+    const container = $("[data-checkout-page]");
+    if (!container || !order) return;
+    container.innerHTML = `
+      ${renderCheckoutSteps("confirm")}
+      <section class="checkout-confirmation">
+        <h1>訂單已確認</h1>
+        <p>多謝你的訂購，我們已收到你的訂單。</p>
+        <div class="checkout-confirmation__details">
+          <p><span>訂單編號</span><strong>${escapeHtml(order.orderNumber)}</strong></p>
+          <p><span>合計金額</span><strong>${formatPrice(order.total)}</strong></p>
+          <p><span>收件人</span><strong>${escapeHtml(order.recipientName)}</strong></p>
+          <p><span>聯絡電話</span><strong>${escapeHtml(order.recipientPhone)}</strong></p>
+          <p><span>收貨方式</span><strong>${order.deliveryMethod === "delivery" ? "送貨上門" : "到店自取"}</strong></p>
+          ${order.deliveryMethod === "delivery" ? `<p><span>收貨地址</span><strong>${escapeHtml(order.deliveryAddress)}</strong></p>` : ""}
+          <p><span>付款方式</span><strong>信用卡</strong></p>
+        </div>
+        <div class="checkout-confirmation__actions">
+          <a class="checkout-secondary-button" href="${homeUrl()}">返回首頁</a>
+          <a class="checkout-button" href="${profileUrl("orders")}">查看我的訂單</a>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderCheckoutPage() {
+    const container = $("[data-checkout-page]");
+    if (!container) return;
+    if (state.orderConfirmation) {
+      renderOrderConfirmation(state.orderConfirmation);
+      return;
+    }
+    loadCart();
+    const defaults = checkoutDefaults();
+    const totals = checkoutTotals(defaults);
+    if (!state.currentUser) {
+      container.innerHTML = `
+        ${renderCheckoutSteps("details")}
+        <section class="checkout-page checkout-page--empty">
+          <h1>請先登入</h1>
+          <p>提交訂單前需要登入帳戶。</p>
+          <a class="checkout-button" href="${rootPrefix()}index.html?auth=login&redirect=checkout">登入 / 註冊</a>
+        </section>
+      `;
+      return;
+    }
+    if (!totals.items.length) {
+      container.innerHTML = `
+        ${renderCheckoutSteps("details")}
+        <section class="checkout-page checkout-page--empty">
+          <h1>購物車暫時沒有商品</h1>
+          <a class="checkout-secondary-button" href="${cartUrl()}">返回購物車</a>
+        </section>
+      `;
+      return;
+    }
+    container.innerHTML = `
+      ${renderCheckoutSteps("details")}
+      <form class="checkout-page" data-checkout-form>
+        <div class="checkout-page__forms">
+          <section class="checkout-section">
+            <h1>顧客資料</h1>
+            <label>顧客名稱<input type="text" name="customerName" data-checkout-field value="${escapeHtml(defaults.customerName)}" required></label>
+            <label>電郵<input type="email" name="customerEmail" data-checkout-field value="${escapeHtml(defaults.customerEmail)}" required></label>
+            <label>電話<input type="tel" name="customerPhone" data-checkout-field value="${escapeHtml(defaults.customerPhone)}" required></label>
+          </section>
+          <section class="checkout-section">
+            <h2>收件人資料</h2>
+            <label class="checkout-checkbox"><input type="checkbox" name="sameAsCustomer" data-checkout-same ${defaults.sameAsCustomer ? "checked" : ""}>收件人資料與顧客資料相同</label>
+            <label>收件人名稱<input type="text" name="recipientName" data-checkout-field value="${escapeHtml(defaults.sameAsCustomer ? defaults.customerName : defaults.recipientName)}" required></label>
+            <label>收件人聯絡電話<input type="tel" name="recipientPhone" data-checkout-field value="${escapeHtml(defaults.sameAsCustomer ? defaults.customerPhone : defaults.recipientPhone)}" required></label>
+            <label>收貨方式
+              <select name="deliveryMethod" data-checkout-delivery data-checkout-field>
+                <option value="pickup" ${defaults.deliveryMethod === "pickup" ? "selected" : ""}>到店自取</option>
+                <option value="delivery" ${defaults.deliveryMethod === "delivery" ? "selected" : ""}>送貨上門</option>
+              </select>
+            </label>
+            <label class="checkout-address ${defaults.deliveryMethod === "delivery" ? "" : "is-hidden"}">收貨地址<textarea name="deliveryAddress" rows="4" data-checkout-field ${defaults.deliveryMethod === "delivery" ? "required" : ""}>${escapeHtml(defaults.sameAsCustomer ? (state.currentUserProfile?.address || defaults.deliveryAddress) : defaults.deliveryAddress)}</textarea></label>
+          </section>
+          <section class="checkout-section">
+            <h2>訂單備註</h2>
+            <textarea name="note" rows="4" data-checkout-note placeholder="如有其他備註，請在這裡填寫。">${escapeHtml(defaults.note)}</textarea>
+          </section>
+          <section class="checkout-section">
+            <h2>付款方式</h2>
+            <label class="checkout-radio"><input type="radio" checked disabled>信用卡</label>
+          </section>
+        </div>
+        <aside class="checkout-page__summary">
+          <h2>訂單摘要</h2>
+          <div class="checkout-summary-items">
+            ${totals.items.map((item) => `
+              <article>
+                <img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}">
+                <div><strong>${escapeHtml(item.name)}</strong><span>x ${item.quantity}</span></div>
+                <span>${formatPrice(item.subtotal)}</span>
+              </article>
+            `).join("")}
+          </div>
+          <p><span>商品小計</span><strong>${formatPrice(totals.subtotal)}</strong></p>
+          <p><span>優惠扣減</span><strong>-${formatPrice(totals.discount)}</strong></p>
+          <p><span>運費</span><strong>${formatPrice(totals.shippingFee)}</strong></p>
+          <p><span>附加費</span><strong>${formatPrice(totals.extraFee)}</strong></p>
+          <p class="checkout-page__total"><span>合計</span><strong>${formatPrice(totals.total)}</strong></p>
+          <p class="checkout-message" data-checkout-message aria-live="polite"></p>
+          <button class="checkout-button" type="submit" data-submit-order>提交訂單</button>
+        </aside>
+      </form>
+    `;
+  }
+
+  function checkoutFormPayload(form) {
+    const formData = new FormData(form);
+    const sameAsCustomer = formData.get("sameAsCustomer") === "on";
+    const customerName = String(formData.get("customerName") || "").trim();
+    const customerEmail = String(formData.get("customerEmail") || "").trim();
+    const customerPhone = String(formData.get("customerPhone") || "").trim();
+    return {
+      customerName,
+      customerEmail,
+      customerPhone,
+      sameAsCustomer,
+      recipientName: sameAsCustomer ? customerName : String(formData.get("recipientName") || "").trim(),
+      recipientPhone: sameAsCustomer ? customerPhone : String(formData.get("recipientPhone") || "").trim(),
+      deliveryMethod: formData.get("deliveryMethod") === "delivery" ? "delivery" : "pickup",
+      deliveryAddress: sameAsCustomer
+        ? String(state.currentUserProfile?.address || formData.get("deliveryAddress") || "").trim()
+        : String(formData.get("deliveryAddress") || "").trim(),
+      note: String(formData.get("note") || "").trim()
+    };
+  }
+
+  function setCheckoutMessage(message, type = "info") {
+    const node = $("[data-checkout-message]");
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.type = type;
+  }
+
+  async function handleCheckoutSubmit(form) {
+    if (!state.currentUser) {
+      window.location.href = `${rootPrefix()}index.html?auth=login&redirect=checkout`;
+      return;
+    }
+    const submitButton = form.querySelector("[data-submit-order]");
+    const payload = checkoutFormPayload(form);
+    saveCheckoutDraft(payload);
+    const totals = checkoutTotals(payload);
+    if (!totals.items.length) {
+      setCheckoutMessage("購物車暫時沒有商品。", "error");
+      return;
+    }
+    if (!payload.customerName || !payload.customerEmail || !payload.customerPhone) {
+      setCheckoutMessage("請填寫顧客名稱、電郵和電話。", "error");
+      return;
+    }
+    if (!payload.recipientName || !payload.recipientPhone) {
+      setCheckoutMessage("請填寫收件人名稱和聯絡電話。", "error");
+      return;
+    }
+    if (payload.deliveryMethod === "delivery" && !payload.deliveryAddress) {
+      setCheckoutMessage("送貨上門需要填寫收貨地址。", "error");
+      return;
+    }
+    try {
+      if (submitButton) submitButton.disabled = true;
+      setCheckoutMessage("正在提交訂單…");
+      const firebase = await getFirebaseService();
+      const orderData = {
+        orderNumber: generateOrderNumber(),
+        customerUid: state.currentUser.uid,
+        customerEmail: payload.customerEmail,
+        customerName: payload.customerName,
+        customerPhone: payload.customerPhone,
+        recipientName: payload.recipientName,
+        recipientPhone: payload.recipientPhone,
+        deliveryMethod: payload.deliveryMethod,
+        deliveryAddress: payload.deliveryAddress,
+        items: totals.items,
+        subtotal: totals.subtotal,
+        discount: totals.discount,
+        shippingFee: totals.shippingFee,
+        extraFee: totals.extraFee,
+        total: totals.total,
+        paymentMethod: "credit_card",
+        paymentStatus: "mock_paid",
+        status: "pending",
+        note: payload.note
+      };
+      const createdOrder = await firebase.createOrder(orderData);
+      state.orderConfirmation = { ...orderData, id: createdOrder.id };
+      state.cart = [];
+      saveCart();
+      clearCheckoutDraft();
+      renderCart();
+      updateCartBadge();
+      renderOrderConfirmation(state.orderConfirmation);
+      showToast("訂單已建立。");
+    } catch (error) {
+      setCheckoutMessage(firebaseAuthMessage(error), "error");
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
   }
 
   function renderCart() {
@@ -972,7 +1360,7 @@
     $$(".cart-total-amount").forEach((node) => {
       node.textContent = formatPrice(totals.amount);
     });
-    $$(".checkout-button").forEach((button) => {
+    $$("#cart-drawer .checkout-button").forEach((button) => {
       button.textContent = totals.amount ? `前往結帳 ${formatPrice(totals.amount)}` : "前往結帳";
     });
     $$(".shipping-progress").forEach((node) => {
@@ -981,6 +1369,12 @@
         ? `再消費 ${formatPrice(remaining)} 即享免運`
         : "此訂單已符合免運門檻";
     });
+    refreshCheckoutSurfaces();
+  }
+
+  function refreshCheckoutSurfaces() {
+    renderCartPage();
+    if (!state.orderConfirmation) renderCheckoutPage();
   }
 
   function updateCartBadge() {
@@ -1883,6 +2277,17 @@
       return;
     }
 
+    if (event.target.closest("[data-go-checkout], #cart-drawer .checkout-button")) {
+      event.preventDefault();
+      if (!state.cart.length) {
+        showToast("購物車暫時沒有商品。");
+        return;
+      }
+      closeDrawer();
+      window.location.href = state.currentUser ? checkoutUrl() : `${rootPrefix()}index.html?auth=login&redirect=checkout`;
+      return;
+    }
+
     const quantityAdjust = event.target.closest("[data-quantity-adjust]");
     if (quantityAdjust) {
       adjustQuantity(quantityAdjust.dataset.quantityAdjust, quantityAdjust.dataset.delta);
@@ -1951,6 +2356,14 @@
     if (event.target.matches("[data-cart-quantity]")) {
       updateCartQuantity(event.target.dataset.productId, event.target.value);
     }
+
+    if (event.target.matches("[data-checkout-same], [data-checkout-delivery]")) {
+      const form = event.target.closest("[data-checkout-form]");
+      if (form) {
+        saveCheckoutDraft(checkoutFormPayload(form));
+        renderCheckoutPage();
+      }
+    }
   });
 
   document.addEventListener("input", (event) => {
@@ -1962,9 +2375,25 @@
     if (event.target.closest("#authModal")) {
       updateAuthSubmitState();
     }
+
+    if (event.target.matches("[data-checkout-note]")) {
+      saveCheckoutDraft({ note: event.target.value });
+    }
+
+    if (event.target.matches("[data-checkout-field]")) {
+      const form = event.target.closest("[data-checkout-form]");
+      if (form) saveCheckoutDraft(checkoutFormPayload(form));
+    }
   });
 
   document.addEventListener("submit", async (event) => {
+    const checkoutForm = event.target.closest("[data-checkout-form]");
+    if (checkoutForm) {
+      event.preventDefault();
+      await handleCheckoutSubmit(checkoutForm);
+      return;
+    }
+
     const profileForm = event.target.closest("[data-profile-settings-form]");
     if (!profileForm) return;
     event.preventDefault();
@@ -2002,6 +2431,8 @@
   window.renderProductGrid = renderProductGrid;
   window.renderHomePage = renderHomePage;
   window.renderProfilePage = renderProfilePage;
+  window.renderCartPage = renderCartPage;
+  window.renderCheckoutPage = renderCheckoutPage;
   window.renderPolicyPage = renderPolicyPage;
   window.renderSiteFooter = renderSiteFooter;
   window.openSearchModal = openSearchModal;
@@ -2035,6 +2466,8 @@
   renderProductGrid();
   renderHomePage();
   renderProfilePage();
+  renderCartPage();
+  renderCheckoutPage();
   renderProductDetail();
   renderAboutPage();
   renderContactPage();
