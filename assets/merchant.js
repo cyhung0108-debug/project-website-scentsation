@@ -36,14 +36,21 @@
   let aboutDraft = null;
   let aboutLoading = false;
   let aboutSaving = false;
+  let policyDrafts = {};
+  let policyLoading = {};
+  let policySaving = {};
+  let activeSiteContentId = "home";
+  let siteContentPreviewMode = "desktop";
   let activeHomeHeroFieldId = null;
   let activeFooterFieldId = null;
   let activeContactFieldId = null;
   let activeAboutFieldId = null;
+  let activePolicyFieldId = null;
   let suppressHomeHeroFocusActivation = false;
   let suppressFooterFocusActivation = false;
   let suppressContactFocusActivation = false;
   let suppressAboutFocusActivation = false;
+  let suppressPolicyFocusActivation = false;
 
   const HOME_HERO_FIELD_TO_PREVIEW_FIELD = {
     "homeHero.imageAlt": "homeHero.imageUrl",
@@ -63,6 +70,22 @@
     "about.imageAlt": "about.imageUrl",
     "about.isActive": "about"
   };
+
+  const POLICY_CONTENT_ITEMS = [
+    { key: "delivery", id: "policyDelivery", docId: "policyDelivery", label: "Delivery Policy" },
+    { key: "payment", id: "policyPayment", docId: "policyPayment", label: "Payment Policy" },
+    { key: "refund", id: "policyRefund", docId: "policyRefund", label: "Refund Policy" }
+  ];
+
+  const SITE_CONTENT_NAV_ITEMS = [
+    { id: "home", label: "Home Page", detail: "Hero banner" },
+    { id: "about", label: "About", detail: "Brand story" },
+    { id: "contact", label: "Contact", detail: "Contact details" },
+    { id: "policyDelivery", label: "Delivery Policy", detail: "Delivery page" },
+    { id: "policyPayment", label: "Payment Policy", detail: "Payment page" },
+    { id: "policyRefund", label: "Refund Policy", detail: "Refund page" },
+    { id: "footer", label: "Footer", detail: "Site footer" }
+  ];
 
   window.merchantUids = merchantUids;
 
@@ -358,6 +381,75 @@
     }
   }
 
+  function policyItemById(policyId) {
+    return POLICY_CONTENT_ITEMS.find((item) => item.id === policyId) || null;
+  }
+
+  function policyIdFromField(fieldId) {
+    return String(fieldId || "").split(".")[0] || "";
+  }
+
+  function previewFieldForPolicyField(fieldId) {
+    return String(fieldId || "").endsWith(".isActive") ? policyIdFromField(fieldId) : fieldId;
+  }
+
+  function findPolicyPreviewTarget(fieldId) {
+    const policyId = policyIdFromField(fieldId);
+    const previewRoot = findDataAttribute(document, "data-preview-id", policyId);
+    if (!previewRoot) return null;
+    const previewFieldId = previewFieldForPolicyField(fieldId);
+    if (previewFieldId === policyId) return previewRoot;
+    return findDataAttribute(previewRoot, "data-preview-field", previewFieldId);
+  }
+
+  function findPolicyEditorTarget(fieldId) {
+    const form = document.querySelector(`[data-policy-form][data-policy-id="${policyIdFromField(fieldId)}"]`);
+    if (!form) return null;
+    return findDataAttribute(form, "data-editor-field", fieldId);
+  }
+
+  function clearPolicyVisualSelection() {
+    document
+      .querySelectorAll('[data-preview-id^="policy"].is-visual-edit-active, [data-preview-id^="policy"] .is-visual-edit-active, [data-policy-form] .is-visual-edit-active')
+      .forEach((node) => node.classList.remove("is-visual-edit-active"));
+  }
+
+  function applyPolicyVisualSelection() {
+    clearPolicyVisualSelection();
+    if (!activePolicyFieldId) return;
+    const previewTarget = findPolicyPreviewTarget(activePolicyFieldId);
+    const editorTarget = findPolicyEditorTarget(activePolicyFieldId);
+    if (previewTarget) previewTarget.classList.add("is-visual-edit-active");
+    if (editorTarget) editorTarget.classList.add("is-visual-edit-active");
+  }
+
+  function activatePolicyField(fieldId, source) {
+    if (!fieldId) return;
+    activePolicyFieldId = fieldId;
+    applyPolicyVisualSelection();
+
+    const previewTarget = findPolicyPreviewTarget(fieldId);
+    const editorTarget = findPolicyEditorTarget(fieldId);
+
+    if (source === "editor" && previewTarget) {
+      previewTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    }
+
+    if (source === "preview" && editorTarget) {
+      editorTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      const focusTarget = editorTarget.matches("input, textarea, button")
+        ? editorTarget
+        : editorTarget.querySelector("input, textarea, button");
+      if (focusTarget) {
+        suppressPolicyFocusActivation = true;
+        focusTarget.focus({ preventScroll: true });
+        window.setTimeout(() => {
+          suppressPolicyFocusActivation = false;
+        }, 0);
+      }
+    }
+  }
+
   function fallbackHomeHero() {
     const home = window.ONLINE_SHOP_SITE_CONFIG?.home || {};
     return {
@@ -490,6 +582,29 @@
     };
   }
 
+  function fallbackPolicyContent(item) {
+    const policy = window.ONLINE_SHOP_SITE_CONFIG?.policies?.[item.key] || {};
+    return {
+      type: "policy",
+      policyKey: item.key,
+      title: String(policy.title || item.label),
+      content: String(policy.content || ""),
+      isActive: policy.isActive !== false
+    };
+  }
+
+  function normalizePolicyContent(item, data) {
+    const fallback = fallbackPolicyContent(item);
+    if (!data || data.type !== "policy" || data.policyKey !== item.key) return fallback;
+    return {
+      type: "policy",
+      policyKey: item.key,
+      title: String(data.title ?? fallback.title),
+      content: String(data.content ?? fallback.content),
+      isActive: typeof data.isActive === "boolean" ? data.isActive : fallback.isActive
+    };
+  }
+
   function hasRolePagesWrite(roleData = currentMerchantRole) {
     const permissions = roleData?.permissions || {};
     const role = String(roleData?.role || roleData?.roleName || "").trim();
@@ -598,6 +713,9 @@
             <button type="button" data-merchant-section="users">\u7528\u6236\u7ba1\u7406</button>
             <button type="button" data-merchant-section="sales">\u92b7\u552e\u7ba1\u7406</button>
             <button type="button" data-merchant-section="pages">\u9801\u9762\u5167\u5bb9</button>
+            <div class="merchant-dashboard__page-subnav" data-site-content-sidebar-nav>
+              ${renderSiteContentSubnav(activeSiteContentId)}
+            </div>
             <button class="is-active" type="button" data-merchant-section="products">\u7522\u54c1\u7ba1\u7406</button>
           </nav>
           <div class="merchant-dashboard__account">${escapeHtml(user.displayName || user.email || "\u5546\u6236\u5e33\u865f")}</div>
@@ -637,9 +755,24 @@
       </section>`;
   }
 
+  function setMerchantSectionActive(section) {
+    document.querySelectorAll("[data-merchant-section]").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.merchantSection === section);
+    });
+    document.querySelectorAll("[data-merchant-panel]").forEach((panel) => {
+      panel.classList.toggle("is-active", panel.dataset.merchantPanel === section);
+    });
+  }
+
+  function updateSiteContentSidebarNav() {
+    document.querySelectorAll("[data-site-content-nav]").forEach((button) => {
+      button.classList.toggle("is-active", button.getAttribute("data-site-content-nav") === activeSiteContentId);
+    });
+  }
+
   function setSiteContentMessage(message, type = "info", contentId = "homeHero") {
     const node = document.querySelector(`[data-site-content-message="${contentId}"]`)
-      || document.querySelector("[data-site-content-message]");
+      || (contentId === "homeHero" ? document.querySelector("[data-site-content-message]") : null);
     if (!node) return;
     node.textContent = message;
     node.dataset.type = type;
@@ -717,6 +850,175 @@
     return aboutDraft;
   }
 
+  function syncPolicyDraftFromForm(form) {
+    const item = policyItemById(form?.dataset?.policyId || "");
+    if (!item) return null;
+    const data = new FormData(form);
+    const draft = {
+      ...(policyDrafts[item.id] || fallbackPolicyContent(item)),
+      type: "policy",
+      policyKey: item.key,
+      title: String(data.get("title") || "").trim(),
+      content: String(data.get("content") || "").trim(),
+      isActive: data.get("isActive") === "on"
+    };
+    policyDrafts = {
+      ...policyDrafts,
+      [item.id]: draft
+    };
+    return draft;
+  }
+
+  function syncVisibleSiteContentDrafts() {
+    if (document.querySelector("[data-home-hero-form]")) syncHomeHeroDraftFromForm();
+    if (document.querySelector("[data-footer-form]")) syncFooterDraftFromForm();
+    if (document.querySelector("[data-contact-form]")) syncContactDraftFromForm();
+    if (document.querySelector("[data-about-form]")) syncAboutDraftFromForm();
+    document.querySelectorAll("[data-policy-form]").forEach((form) => syncPolicyDraftFromForm(form));
+  }
+
+  function clearSiteContentVisualSelectionState() {
+    activeHomeHeroFieldId = null;
+    activeFooterFieldId = null;
+    activeContactFieldId = null;
+    activeAboutFieldId = null;
+    activePolicyFieldId = null;
+  }
+
+  function siteContentNavItem(contentId = activeSiteContentId) {
+    return SITE_CONTENT_NAV_ITEMS.find((item) => item.id === contentId) || SITE_CONTENT_NAV_ITEMS[0];
+  }
+
+  function renderSiteContentSubnav(activeId) {
+    return SITE_CONTENT_NAV_ITEMS.map((item) => `
+      <button class="${item.id === activeId ? "is-active" : ""}" type="button" data-site-content-nav="${escapeHtml(item.id)}">
+        <span>${escapeHtml(item.label)}</span>
+        <small>${escapeHtml(item.detail)}</small>
+      </button>
+    `).join("");
+  }
+
+  function renderSiteContentViewportControls() {
+    return ["desktop", "tablet", "mobile"].map((mode) => `
+      <button class="${siteContentPreviewMode === mode ? "is-active" : ""}" type="button" data-site-content-preview-mode="${mode}">
+        ${escapeHtml(mode[0].toUpperCase() + mode.slice(1))}
+      </button>
+    `).join("");
+  }
+
+  function renderPreviewHeader(activeId) {
+    const activeClass = (id) => id === activeId ? " is-active" : "";
+    return `
+      <div class="announcement merchant-site-content__preview-announcement">Free shipping on eligible orders</div>
+      <header class="site-header merchant-site-content__site-header">
+        <button class="mobile-menu-button" type="button" aria-label="Menu"><span></span><span></span></button>
+        <a class="brand" href="#">APOTHEKE</a>
+        <nav class="desktop-nav" aria-label="Preview navigation">
+          <a class="nav-link${activeClass("home")}" href="#">Home</a>
+          <a class="nav-link" href="#">Products</a>
+          <a class="nav-link${activeClass("about")}" href="#">About</a>
+          <a class="nav-link${activeClass("contact")}" href="#">Contact</a>
+          <a class="nav-link${activeClass("policy")}" href="#">Policy</a>
+        </nav>
+        <div class="header-actions">
+          <a class="account-link" href="#">Account</a>
+          <button class="icon-button search-button" type="button" aria-label="Search"></button>
+          <button class="cart-button" type="button" aria-label="Cart"><span class="cart-shape"><span class="cart-count">0</span></span></button>
+        </div>
+      </header>
+    `;
+  }
+
+  function renderPreviewFooter(footer, withFields = false) {
+    if (!footer.isActive) return "";
+    const logoText = String(footer.logoText || "APOTHEKE").trim();
+    const description = String(footer.description || "").trim();
+    const phone = String(footer.phone || "").trim();
+    const phoneHref = phone.replace(/[^+\d]/g, "");
+    const email = String(footer.email || "").trim();
+    const address = String(footer.address || "").trim();
+    const copyright = String(footer.copyright || "").trim();
+    const instagramUrl = resolvePreviewUrl(footer.instagramUrl);
+    const facebookUrl = resolvePreviewUrl(footer.facebookUrl);
+    const fieldAttr = (field) => withFields ? ` data-preview-field="footer.${field}"` : "";
+    const socialLinks = [
+      instagramUrl ? `<a class="site-footer__social-link" href="${escapeHtml(instagramUrl)}"${fieldAttr("instagramUrl")}>Instagram</a>` : "",
+      facebookUrl ? `<a class="site-footer__social-link" href="${escapeHtml(facebookUrl)}"${fieldAttr("facebookUrl")}>Facebook</a>` : ""
+    ].filter(Boolean).join("");
+
+    return `
+      <footer class="site-footer" data-site-footer>
+        <div class="site-footer__inner">
+          <div class="site-footer__brand-group">
+            <a class="site-footer__brand" href="#"${fieldAttr("logoText")}>${escapeHtml(logoText)}</a>
+            ${description ? `<p class="site-footer__description"${fieldAttr("description")}>${textToHtml(description)}</p>` : ""}
+            ${socialLinks ? `<div class="site-footer__social">${socialLinks}</div>` : ""}
+          </div>
+          <div>
+            <span class="site-footer__label">Phone</span>
+            ${phoneHref
+              ? `<a class="site-footer__value" href="tel:${escapeHtml(phoneHref)}"${fieldAttr("phone")}>${escapeHtml(phone)}</a>`
+              : `<span class="site-footer__value"${fieldAttr("phone")}>${escapeHtml(phone)}</span>`}
+            ${email ? `<a class="site-footer__value site-footer__email" href="mailto:${escapeHtml(email)}"${fieldAttr("email")}>${escapeHtml(email)}</a>` : ""}
+          </div>
+          <div>
+            <span class="site-footer__label">Address</span>
+            <address${fieldAttr("address")}>${textToHtml(address)}</address>
+            ${copyright ? `<small class="site-footer__copyright"${fieldAttr("copyright")}>${escapeHtml(copyright)}</small>` : ""}
+          </div>
+        </div>
+      </footer>
+    `;
+  }
+
+  function renderPreviewPage(previewId, activePageId, bodyHtml, footer, footerFields = false) {
+    const isPolicyPreview = String(previewId || "").startsWith("policy");
+    return `
+      <div class="merchant-site-content__preview-frame merchant-site-content__preview-page${isPolicyPreview ? " merchant-site-content__preview-page--policy" : ""}" data-site-content-preview data-preview-id="${escapeHtml(previewId)}">
+        ${renderPreviewHeader(activePageId)}
+        <main>${bodyHtml}</main>
+        ${renderPreviewFooter(footer, footerFields)}
+      </div>
+    `;
+  }
+
+  function renderPolicyContentSection(item, canEdit, permissionMessage) {
+    const policy = policyDrafts[item.id] || fallbackPolicyContent(item);
+    const controlsDisabled = !canEdit || policyLoading[item.id] || policySaving[item.id];
+    const saveText = policySaving[item.id] ? "Saving..." : `Save ${item.label}`;
+    return `
+      <h2 class="merchant-site-content__section-title">${escapeHtml(item.label)}</h2>
+      <section class="merchant-products-panel merchant-site-content__panel">
+        <div class="merchant-site-content__preview-frame merchant-site-content__preview-frame--policy" data-site-content-preview data-preview-id="${escapeHtml(item.id)}">
+          <div class="merchant-site-content__policy-preview">
+            <strong data-preview-field="${escapeHtml(item.id)}.title">${escapeHtml(policy.title)}</strong>
+            <div data-preview-field="${escapeHtml(item.id)}.content">${textToHtml(policy.content)}</div>
+            <span class="merchant-site-content__status" data-preview-field="${escapeHtml(item.id)}.isActive">${policy.isActive ? "Visible" : "Hidden"}</span>
+          </div>
+        </div>
+        <form class="merchant-form merchant-site-content__form" data-policy-form data-policy-id="${escapeHtml(item.id)}">
+          <fieldset ${controlsDisabled ? "disabled" : ""}>
+            <label data-editor-field="${escapeHtml(item.id)}.title">Title
+              <input name="title" type="text" maxlength="120" value="${escapeHtml(policy.title)}">
+            </label>
+            <label data-editor-field="${escapeHtml(item.id)}.content">Content
+              <textarea name="content" rows="7" maxlength="4000">${escapeHtml(policy.content)}</textarea>
+            </label>
+            <label class="merchant-checkbox" data-editor-field="${escapeHtml(item.id)}.isActive">
+              <input name="isActive" type="checkbox" ${policy.isActive ? "checked" : ""}>
+              <span>Show ${escapeHtml(item.label)}</span>
+            </label>
+          </fieldset>
+          <p class="merchant-message" data-site-content-message="${escapeHtml(item.id)}" aria-live="polite"></p>
+          <div class="merchant-modal__actions">
+            <button class="merchant-primary-button" type="submit" ${controlsDisabled ? "disabled" : ""}>${escapeHtml(saveText)}</button>
+          </div>
+          ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
+        </form>
+      </section>
+    `;
+  }
+
   function renderSiteContentPanel() {
     const panel = document.querySelector("[data-site-content-panel]");
     if (!panel) return;
@@ -745,26 +1047,99 @@
     const aboutControlsDisabled = !canEdit || aboutLoading || aboutSaving;
     const aboutSaveText = aboutSaving ? "Saving..." : "Save About";
     const aboutImageUrl = resolvePreviewUrl(about.imageUrl);
-
-    panel.innerHTML = `
-      <div class="merchant-page merchant-site-content">
-        <div class="merchant-page__heading">
-          <div>
-            <p class="merchant-eyebrow">\u9801\u9762\u5167\u5bb9</p>
-            <h1>Website Content</h1>
+    const homePreviewBody = `
+      ${hero.isActive ? `
+        <section class="home-banner home-hero" aria-label="${escapeHtml(hero.imageAlt || "Home Hero")}">
+          ${imageUrl ? `<img class="home-hero__image" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(hero.imageAlt)}" data-preview-field="homeHero.imageUrl">` : `<span data-preview-field="homeHero.imageUrl">No image</span>`}
+          <div class="home-hero__content">
+            ${hero.title ? `<h1 data-preview-field="homeHero.title">${escapeHtml(hero.title)}</h1>` : ""}
+            ${hero.subtitle ? `<p data-preview-field="homeHero.subtitle">${textToHtml(hero.subtitle)}</p>` : ""}
+            ${hero.buttonText ? `<a class="home-hero__button" href="${escapeHtml(buttonHref || "#")}" data-preview-field="homeHero.buttonText">${escapeHtml(hero.buttonText)}</a>` : ""}
           </div>
-          <a class="merchant-secondary-button merchant-site-content__preview" href="${rootPrefix()}index.html" target="_blank" rel="noopener noreferrer">Preview</a>
+        </section>
+      ` : ""}
+      <section class="home-products merchant-site-content__preview-products" aria-label="Featured products">
+        <h1>Featured Products</h1>
+        <div class="product-grid home-products__grid">
+          <article class="merchant-site-content__product-placeholder"></article>
+          <article class="merchant-site-content__product-placeholder"></article>
+          <article class="merchant-site-content__product-placeholder"></article>
+          <article class="merchant-site-content__product-placeholder"></article>
         </div>
-        <h2 class="merchant-site-content__section-title">Home Hero</h2>
-        <section class="merchant-products-panel merchant-site-content__panel">
-          <div class="merchant-site-content__preview-frame" data-site-content-preview data-preview-id="homeHero">
-            ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(hero.imageAlt)}" data-preview-field="homeHero.imageUrl">` : `<span data-preview-field="homeHero.imageUrl">No image</span>`}
-            <div class="merchant-site-content__preview-copy">
-              ${hero.title ? `<strong data-preview-field="homeHero.title">${escapeHtml(hero.title)}</strong>` : ""}
-              ${hero.subtitle ? `<span data-preview-field="homeHero.subtitle">${escapeHtml(hero.subtitle)}</span>` : ""}
-              ${hero.buttonText ? `<a class="merchant-site-content__preview-button" href="${escapeHtml(buttonHref || "#")}" data-preview-field="homeHero.buttonText">${escapeHtml(hero.buttonText)}</a>` : ""}
+      </section>
+    `;
+    const aboutPreviewBody = `
+      <section class="info-page about-page">
+        <div class="about-page__layout">
+          <div class="about-page__content">
+            <h1 data-preview-field="about.title">${escapeHtml(about.title || "About")}</h1>
+            ${about.subtitle ? `<h2 data-preview-field="about.subtitle">${escapeHtml(about.subtitle)}</h2>` : `<h2 data-preview-field="about.subtitle">Subtitle</h2>`}
+            ${about.intro ? `<p class="info-intro" data-preview-field="about.intro">${textToHtml(about.intro)}</p>` : `<p class="info-intro" data-preview-field="about.intro">Intro</p>`}
+            <div class="info-sections">
+              <article>
+                ${about.sectionTitle ? `<h3 data-preview-field="about.sectionTitle">${escapeHtml(about.sectionTitle)}</h3>` : `<h3 data-preview-field="about.sectionTitle">Section title</h3>`}
+                ${about.sectionContent ? `<p data-preview-field="about.sectionContent">${textToHtml(about.sectionContent)}</p>` : `<p data-preview-field="about.sectionContent">Section content</p>`}
+              </article>
             </div>
+            <span class="merchant-site-content__status" data-preview-field="about.isActive">${about.isActive ? "Visible" : "Hidden"}</span>
           </div>
+          <figure class="about-page__image" data-preview-field="about.imageUrl">
+            ${aboutImageUrl ? `<img src="${escapeHtml(aboutImageUrl)}" alt="${escapeHtml(about.imageAlt || about.title || "About")}">` : `<span>No image URL</span>`}
+          </figure>
+        </div>
+      </section>
+    `;
+    const contactPreviewBody = `
+      <section class="info-page contact-page">
+        <h1 data-preview-field="contact.title">${escapeHtml(contact.title || "Contact")}</h1>
+        ${contact.subtitle ? `<p class="info-intro" data-preview-field="contact.subtitle">${textToHtml(contact.subtitle)}</p>` : `<p class="info-intro" data-preview-field="contact.subtitle">Subtitle</p>`}
+        <div class="contact-layout">
+          <div class="contact-details">
+            <article data-preview-field="contact.address">
+              <h2>Address</h2>
+              <p>${textToHtml(contact.address)}</p>
+            </article>
+            <article data-preview-field="contact.openingHours">
+              <h2>Opening Hours</h2>
+              <p>${textToHtml(contact.openingHours)}</p>
+            </article>
+            <article data-preview-field="contact.phone">
+              <h2>Phone</h2>
+              <p>${contactPhoneHref ? `<a href="tel:${escapeHtml(contactPhoneHref)}">${escapeHtml(contact.phone)}</a>` : escapeHtml(contact.phone)}</p>
+            </article>
+            <article data-preview-field="contact.email">
+              <h2>Email</h2>
+              <p>${contactEmail ? `<a href="mailto:${escapeHtml(contactEmail)}">${escapeHtml(contactEmail)}</a>` : "Email"}</p>
+            </article>
+            <article data-preview-field="contact.other">
+              <h2>Other</h2>
+              <p>${textToHtml(contact.other)}</p>
+            </article>
+          </div>
+          <div class="map-panel" data-preview-field="contact.googleMapEmbedUrl">
+            ${contactMapUrl
+              ? `<iframe src="${escapeHtml(contactMapUrl)}" loading="lazy" allowfullscreen referrerpolicy="no-referrer-when-downgrade" title="Google Map"></iframe>`
+              : `<div class="map-placeholder">Google Map has not been configured.</div>`}
+          </div>
+        </div>
+        <span class="merchant-site-content__status" data-preview-field="contact.isActive">${contact.isActive ? "Visible" : "Hidden"}</span>
+      </section>
+    `;
+    const footerPreviewBody = `
+      <section class="info-page merchant-site-content__footer-page">
+        <h1>Footer</h1>
+        <p class="info-intro">Footer appears at the bottom of the storefront pages.</p>
+      </section>
+    `;
+    const modules = {
+      home: {
+        id: "home",
+        label: "Home Page",
+        detail: "Hero banner",
+        messageId: "homeHero",
+        openHref: `${rootPrefix()}index.html`,
+        previewHtml: renderPreviewPage("homeHero", "home", homePreviewBody, footer),
+        editorHtml: `
           <form class="merchant-form merchant-site-content__form" data-home-hero-form>
             <fieldset ${controlsDisabled ? "disabled" : ""}>
               <div class="merchant-form__row">
@@ -803,26 +1178,115 @@
             </div>
             ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
           </form>
-        </section>
-        <h2 class="merchant-site-content__section-title">Footer</h2>
-        <section class="merchant-products-panel merchant-site-content__panel">
-          <div class="merchant-site-content__preview-frame merchant-site-content__preview-frame--footer" data-site-content-preview data-preview-id="footer">
-            <div class="merchant-site-content__footer-preview">
-              <strong data-preview-field="footer.logoText">${escapeHtml(footer.logoText)}</strong>
-              ${footer.description ? `<p data-preview-field="footer.description">${textToHtml(footer.description)}</p>` : ""}
-              <div class="merchant-site-content__footer-contact">
-                ${footer.phone ? `<a href="${footerPhoneHref ? `tel:${escapeHtml(footerPhoneHref)}` : "#"}" data-preview-field="footer.phone">${escapeHtml(footer.phone)}</a>` : `<span data-preview-field="footer.phone">Phone</span>`}
-                ${footerEmail ? `<a href="mailto:${escapeHtml(footerEmail)}" data-preview-field="footer.email">${escapeHtml(footerEmail)}</a>` : `<span data-preview-field="footer.email">Email</span>`}
-                ${footer.address ? `<address data-preview-field="footer.address">${textToHtml(footer.address)}</address>` : `<address data-preview-field="footer.address">Address</address>`}
+        `
+      },
+      about: {
+        id: "about",
+        label: "About",
+        detail: "Brand story",
+        messageId: "about",
+        openHref: `${rootPrefix()}about.html`,
+        previewHtml: renderPreviewPage("about", "about", aboutPreviewBody, footer),
+        editorHtml: `
+          <form class="merchant-form merchant-site-content__form" data-about-form>
+            <fieldset ${aboutControlsDisabled ? "disabled" : ""}>
+              <div class="merchant-form__row">
+                <label data-editor-field="about.title">Title
+                  <input name="title" type="text" maxlength="120" value="${escapeHtml(about.title)}">
+                </label>
+                <label data-editor-field="about.subtitle">Subtitle
+                  <input name="subtitle" type="text" maxlength="160" value="${escapeHtml(about.subtitle)}">
+                </label>
               </div>
-              <div class="merchant-site-content__footer-social">
-                ${footer.instagramUrl ? `<a href="${escapeHtml(footerInstagramUrl || "#")}" data-preview-field="footer.instagramUrl">Instagram</a>` : ""}
-                ${footer.facebookUrl ? `<a href="${escapeHtml(footerFacebookUrl || "#")}" data-preview-field="footer.facebookUrl">Facebook</a>` : ""}
+              <label data-editor-field="about.intro">Intro
+                <textarea name="intro" rows="4" maxlength="600">${escapeHtml(about.intro)}</textarea>
+              </label>
+              <div class="merchant-form__row">
+                <label data-editor-field="about.sectionTitle">Section title
+                  <input name="sectionTitle" type="text" maxlength="120" value="${escapeHtml(about.sectionTitle)}">
+                </label>
+                <label data-editor-field="about.imageAlt">Image alt
+                  <input name="imageAlt" type="text" maxlength="160" value="${escapeHtml(about.imageAlt)}">
+                </label>
               </div>
-              <small data-preview-field="footer.copyright">${escapeHtml(footer.copyright)}</small>
-              <span class="merchant-site-content__status" data-preview-field="footer.isActive">${footer.isActive ? "Visible" : "Hidden"}</span>
+              <label data-editor-field="about.sectionContent">Section content
+                <textarea name="sectionContent" rows="4" maxlength="800">${escapeHtml(about.sectionContent)}</textarea>
+              </label>
+              <label data-editor-field="about.imageUrl">Image URL
+                <input name="imageUrl" type="text" maxlength="2000" value="${escapeHtml(about.imageUrl)}">
+              </label>
+              <label class="merchant-checkbox" data-editor-field="about.isActive">
+                <input name="isActive" type="checkbox" ${about.isActive ? "checked" : ""}>
+                <span>Show About</span>
+              </label>
+            </fieldset>
+            <p class="merchant-message" data-site-content-message="about" aria-live="polite"></p>
+            <div class="merchant-modal__actions">
+              <button class="merchant-primary-button" type="submit" data-save-about ${aboutControlsDisabled ? "disabled" : ""}>${aboutSaveText}</button>
             </div>
-          </div>
+            ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
+          </form>
+        `
+      },
+      contact: {
+        id: "contact",
+        label: "Contact",
+        detail: "Contact details",
+        messageId: "contact",
+        openHref: `${rootPrefix()}contact.html`,
+        previewHtml: renderPreviewPage("contact", "contact", contactPreviewBody, footer),
+        editorHtml: `
+          <form class="merchant-form merchant-site-content__form" data-contact-form>
+            <fieldset ${contactControlsDisabled ? "disabled" : ""}>
+              <div class="merchant-form__row">
+                <label data-editor-field="contact.title">Title
+                  <input name="title" type="text" maxlength="120" value="${escapeHtml(contact.title)}">
+                </label>
+                <label data-editor-field="contact.phone">Phone
+                  <input name="phone" type="text" maxlength="60" value="${escapeHtml(contact.phone)}">
+                </label>
+              </div>
+              <label data-editor-field="contact.subtitle">Subtitle
+                <textarea name="subtitle" rows="2" maxlength="240">${escapeHtml(contact.subtitle)}</textarea>
+              </label>
+              <div class="merchant-form__row">
+                <label data-editor-field="contact.email">Email
+                  <input name="email" type="email" maxlength="120" value="${escapeHtml(contact.email)}">
+                </label>
+                <label data-editor-field="contact.openingHours">Opening hours
+                  <input name="openingHours" type="text" maxlength="160" value="${escapeHtml(contact.openingHours)}">
+                </label>
+              </div>
+              <label data-editor-field="contact.address">Address
+                <textarea name="address" rows="3" maxlength="280">${escapeHtml(contact.address)}</textarea>
+              </label>
+              <label data-editor-field="contact.googleMapEmbedUrl">Google Map embed URL
+                <input name="googleMapEmbedUrl" type="text" maxlength="1000" value="${escapeHtml(contact.googleMapEmbedUrl)}">
+              </label>
+              <label data-editor-field="contact.other">Other
+                <textarea name="other" rows="3" maxlength="360">${escapeHtml(contact.other)}</textarea>
+              </label>
+              <label class="merchant-checkbox" data-editor-field="contact.isActive">
+                <input name="isActive" type="checkbox" ${contact.isActive ? "checked" : ""}>
+                <span>Show Contact</span>
+              </label>
+            </fieldset>
+            <p class="merchant-message" data-site-content-message="contact" aria-live="polite"></p>
+            <div class="merchant-modal__actions">
+              <button class="merchant-primary-button" type="submit" data-save-contact ${contactControlsDisabled ? "disabled" : ""}>${contactSaveText}</button>
+            </div>
+            ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
+          </form>
+        `
+      },
+      footer: {
+        id: "footer",
+        label: "Footer",
+        detail: "Site footer",
+        messageId: "footer",
+        openHref: `${rootPrefix()}index.html`,
+        previewHtml: renderPreviewPage("footer", "home", footerPreviewBody, footer, true),
+        editorHtml: `
           <form class="merchant-form merchant-site-content__form" data-footer-form>
             <fieldset ${footerControlsDisabled ? "disabled" : ""}>
               <div class="merchant-form__row">
@@ -866,155 +1330,111 @@
             </div>
             ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
           </form>
+        `
+      }
+    };
+
+    POLICY_CONTENT_ITEMS.forEach((item) => {
+      const policy = policyDrafts[item.id] || fallbackPolicyContent(item);
+      const controlsAreDisabled = !canEdit || policyLoading[item.id] || policySaving[item.id];
+      const policySaveText = policySaving[item.id] ? "Saving..." : `Save ${item.label}`;
+      const policyPreviewBody = `
+        <section class="info-page policy-page">
+          <h1 data-preview-field="${escapeHtml(item.id)}.title">${escapeHtml(policy.title || item.label)}</h1>
+          ${policy.isActive ? `<div class="policy-page__content" data-preview-field="${escapeHtml(item.id)}.content"><p>${textToHtml(policy.content)}</p></div>` : ""}
+          <span class="merchant-site-content__status" data-preview-field="${escapeHtml(item.id)}.isActive">${policy.isActive ? "Visible" : "Hidden"}</span>
         </section>
-        <h2 class="merchant-site-content__section-title">Contact</h2>
-        <section class="merchant-products-panel merchant-site-content__panel">
-          <div class="merchant-site-content__preview-frame merchant-site-content__preview-frame--contact" data-site-content-preview data-preview-id="contact">
-            <div class="merchant-site-content__contact-preview">
-              <div class="merchant-site-content__contact-heading">
-                <strong data-preview-field="contact.title">${escapeHtml(contact.title)}</strong>
-                ${contact.subtitle ? `<p data-preview-field="contact.subtitle">${textToHtml(contact.subtitle)}</p>` : `<p data-preview-field="contact.subtitle">Subtitle</p>`}
-              </div>
-              <div class="merchant-site-content__contact-grid">
-                <article data-preview-field="contact.address">
-                  <span>Address</span>
-                  <p>${textToHtml(contact.address)}</p>
-                </article>
-                <article data-preview-field="contact.openingHours">
-                  <span>Opening Hours</span>
-                  <p>${textToHtml(contact.openingHours)}</p>
-                </article>
-                <article data-preview-field="contact.phone">
-                  <span>Phone</span>
-                  ${contactPhoneHref ? `<a href="tel:${escapeHtml(contactPhoneHref)}">${escapeHtml(contact.phone)}</a>` : `<p>${escapeHtml(contact.phone)}</p>`}
-                </article>
-                <article data-preview-field="contact.email">
-                  <span>Email</span>
-                  ${contactEmail ? `<a href="mailto:${escapeHtml(contactEmail)}">${escapeHtml(contactEmail)}</a>` : `<p>Email</p>`}
-                </article>
-                <article data-preview-field="contact.other">
-                  <span>Other</span>
-                  <p>${textToHtml(contact.other)}</p>
-                </article>
-                <article data-preview-field="contact.googleMapEmbedUrl">
-                  <span>Map</span>
-                  ${contactMapUrl ? `<a href="${escapeHtml(contactMapUrl)}">Google Map embed configured</a>` : `<p>Google Map has not been configured.</p>`}
-                </article>
-              </div>
-              <span class="merchant-site-content__status" data-preview-field="contact.isActive">${contact.isActive ? "Visible" : "Hidden"}</span>
-            </div>
-          </div>
-          <form class="merchant-form merchant-site-content__form" data-contact-form>
-            <fieldset ${contactControlsDisabled ? "disabled" : ""}>
-              <div class="merchant-form__row">
-                <label data-editor-field="contact.title">Title
-                  <input name="title" type="text" maxlength="120" value="${escapeHtml(contact.title)}">
-                </label>
-                <label data-editor-field="contact.phone">Phone
-                  <input name="phone" type="text" maxlength="60" value="${escapeHtml(contact.phone)}">
-                </label>
-              </div>
-              <label data-editor-field="contact.subtitle">Subtitle
-                <textarea name="subtitle" rows="2" maxlength="240">${escapeHtml(contact.subtitle)}</textarea>
+      `;
+      modules[item.id] = {
+        id: item.id,
+        label: item.label,
+        detail: "Policy page",
+        messageId: item.id,
+        openHref: `${rootPrefix()}${item.key === "delivery" ? "delivery" : item.key === "payment" ? "payment" : "refund"}.html`,
+        previewHtml: renderPreviewPage(item.id, "policy", policyPreviewBody, footer),
+        editorHtml: `
+          <form class="merchant-form merchant-site-content__form" data-policy-form data-policy-id="${escapeHtml(item.id)}">
+            <fieldset ${controlsAreDisabled ? "disabled" : ""}>
+              <label data-editor-field="${escapeHtml(item.id)}.title">Title
+                <input name="title" type="text" maxlength="120" value="${escapeHtml(policy.title)}">
               </label>
-              <div class="merchant-form__row">
-                <label data-editor-field="contact.email">Email
-                  <input name="email" type="email" maxlength="120" value="${escapeHtml(contact.email)}">
-                </label>
-                <label data-editor-field="contact.openingHours">Opening hours
-                  <input name="openingHours" type="text" maxlength="160" value="${escapeHtml(contact.openingHours)}">
-                </label>
-              </div>
-              <label data-editor-field="contact.address">Address
-                <textarea name="address" rows="3" maxlength="280">${escapeHtml(contact.address)}</textarea>
+              <label data-editor-field="${escapeHtml(item.id)}.content">Content
+                <textarea name="content" rows="9" maxlength="4000">${escapeHtml(policy.content)}</textarea>
               </label>
-              <label data-editor-field="contact.googleMapEmbedUrl">Google Map embed URL
-                <input name="googleMapEmbedUrl" type="text" maxlength="1000" value="${escapeHtml(contact.googleMapEmbedUrl)}">
-              </label>
-              <label data-editor-field="contact.other">Other
-                <textarea name="other" rows="3" maxlength="360">${escapeHtml(contact.other)}</textarea>
-              </label>
-              <label class="merchant-checkbox" data-editor-field="contact.isActive">
-                <input name="isActive" type="checkbox" ${contact.isActive ? "checked" : ""}>
-                <span>Show Contact</span>
+              <label class="merchant-checkbox" data-editor-field="${escapeHtml(item.id)}.isActive">
+                <input name="isActive" type="checkbox" ${policy.isActive ? "checked" : ""}>
+                <span>Show ${escapeHtml(item.label)}</span>
               </label>
             </fieldset>
-            <p class="merchant-message" data-site-content-message="contact" aria-live="polite"></p>
+            <p class="merchant-message" data-site-content-message="${escapeHtml(item.id)}" aria-live="polite"></p>
             <div class="merchant-modal__actions">
-              <button class="merchant-primary-button" type="submit" data-save-contact ${contactControlsDisabled ? "disabled" : ""}>${contactSaveText}</button>
+              <button class="merchant-primary-button" type="submit" ${controlsAreDisabled ? "disabled" : ""}>${escapeHtml(policySaveText)}</button>
             </div>
             ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
           </form>
-        </section>
-        <h2 class="merchant-site-content__section-title">About</h2>
-        <section class="merchant-products-panel merchant-site-content__panel">
-          <div class="merchant-site-content__preview-frame merchant-site-content__preview-frame--about" data-site-content-preview data-preview-id="about">
-            <div class="merchant-site-content__about-preview">
-              <div class="merchant-site-content__about-copy">
-                <strong data-preview-field="about.title">${escapeHtml(about.title)}</strong>
-                ${about.subtitle ? `<span data-preview-field="about.subtitle">${escapeHtml(about.subtitle)}</span>` : `<span data-preview-field="about.subtitle">Subtitle</span>`}
-                ${about.intro ? `<p data-preview-field="about.intro">${textToHtml(about.intro)}</p>` : `<p data-preview-field="about.intro">Intro</p>`}
-                <article>
-                  ${about.sectionTitle ? `<h3 data-preview-field="about.sectionTitle">${escapeHtml(about.sectionTitle)}</h3>` : `<h3 data-preview-field="about.sectionTitle">Section title</h3>`}
-                  ${about.sectionContent ? `<p data-preview-field="about.sectionContent">${textToHtml(about.sectionContent)}</p>` : `<p data-preview-field="about.sectionContent">Section content</p>`}
-                </article>
-                <span class="merchant-site-content__status" data-preview-field="about.isActive">${about.isActive ? "Visible" : "Hidden"}</span>
-              </div>
-              <div class="merchant-site-content__about-image" data-preview-field="about.imageUrl">
-                ${aboutImageUrl ? `<img src="${escapeHtml(aboutImageUrl)}" alt="${escapeHtml(about.imageAlt)}">` : `<span>No image URL</span>`}
-              </div>
-            </div>
+        `
+      };
+    });
+
+    if (!modules[activeSiteContentId]) activeSiteContentId = "home";
+    const activeModule = modules[activeSiteContentId];
+    const activeNavItem = siteContentNavItem(activeSiteContentId);
+
+    panel.innerHTML = `
+      <div class="merchant-page merchant-site-content">
+        <div class="merchant-page__heading">
+          <div>
+            <p class="merchant-eyebrow">\u9801\u9762\u5167\u5bb9</p>
+            <h1>Website Content</h1>
           </div>
-          <form class="merchant-form merchant-site-content__form" data-about-form>
-            <fieldset ${aboutControlsDisabled ? "disabled" : ""}>
-              <div class="merchant-form__row">
-                <label data-editor-field="about.title">Title
-                  <input name="title" type="text" maxlength="120" value="${escapeHtml(about.title)}">
-                </label>
-                <label data-editor-field="about.subtitle">Subtitle
-                  <input name="subtitle" type="text" maxlength="160" value="${escapeHtml(about.subtitle)}">
-                </label>
+          <a class="merchant-secondary-button merchant-site-content__preview" href="${escapeHtml(activeModule.openHref)}" target="_blank" rel="noopener noreferrer">Open live page</a>
+        </div>
+        <div class="merchant-site-content__studio">
+          <section class="merchant-site-content__preview-pane">
+            <div class="merchant-site-content__pane-header">
+              <div>
+                <span>Live Preview</span>
+                <strong>${escapeHtml(activeModule.label)}</strong>
               </div>
-              <label data-editor-field="about.intro">Intro
-                <textarea name="intro" rows="4" maxlength="600">${escapeHtml(about.intro)}</textarea>
-              </label>
-              <div class="merchant-form__row">
-                <label data-editor-field="about.sectionTitle">Section title
-                  <input name="sectionTitle" type="text" maxlength="120" value="${escapeHtml(about.sectionTitle)}">
-                </label>
-                <label data-editor-field="about.imageAlt">Image alt
-                  <input name="imageAlt" type="text" maxlength="160" value="${escapeHtml(about.imageAlt)}">
-                </label>
+              <div class="merchant-site-content__viewport" aria-label="Preview size">
+                ${renderSiteContentViewportControls()}
               </div>
-              <label data-editor-field="about.sectionContent">Section content
-                <textarea name="sectionContent" rows="4" maxlength="800">${escapeHtml(about.sectionContent)}</textarea>
-              </label>
-              <label data-editor-field="about.imageUrl">Image URL
-                <input name="imageUrl" type="text" maxlength="2000" value="${escapeHtml(about.imageUrl)}">
-              </label>
-              <label class="merchant-checkbox" data-editor-field="about.isActive">
-                <input name="isActive" type="checkbox" ${about.isActive ? "checked" : ""}>
-                <span>Show About</span>
-              </label>
-            </fieldset>
-            <p class="merchant-message" data-site-content-message="about" aria-live="polite"></p>
-            <div class="merchant-modal__actions">
-              <button class="merchant-primary-button" type="submit" data-save-about ${aboutControlsDisabled ? "disabled" : ""}>${aboutSaveText}</button>
             </div>
-            ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
-          </form>
-        </section>
+            <div class="merchant-site-content__preview-scroll">
+              <div class="merchant-site-content__device merchant-site-content__device--${escapeHtml(siteContentPreviewMode)} merchant-site-content__device--${escapeHtml(activeModule.id)}">
+                ${activeModule.previewHtml}
+              </div>
+            </div>
+          </section>
+          <aside class="merchant-site-content__editor-pane">
+            <div class="merchant-site-content__pane-header">
+              <div>
+                <span>Editor</span>
+                <strong>${escapeHtml(activeModule.label)}</strong>
+              </div>
+              <small>${escapeHtml(activeNavItem.detail)}</small>
+            </div>
+            <div class="merchant-site-content__editor-scroll">
+              ${activeModule.editorHtml}
+            </div>
+          </aside>
+        </div>
       </div>
     `;
+    updateSiteContentSidebarNav();
     applyHomeHeroVisualSelection();
     applyFooterVisualSelection();
     applyContactVisualSelection();
     applyAboutVisualSelection();
+    applyPolicyVisualSelection();
 
     if (homeHeroLoading) setSiteContentMessage("Loading Home Hero...", "info");
     if (footerLoading) setSiteContentMessage("Loading Footer...", "info", "footer");
     if (contactLoading) setSiteContentMessage("Loading Contact...", "info", "contact");
     if (aboutLoading) setSiteContentMessage("Loading About...", "info", "about");
+    POLICY_CONTENT_ITEMS.forEach((item) => {
+      if (policyLoading[item.id]) setSiteContentMessage(`Loading ${item.label}...`, "info", item.id);
+    });
   }
 
   async function loadMerchantRole(user) {
@@ -1151,6 +1571,41 @@
       renderSiteContentPanel();
       setSiteContentMessage(merchantErrorMessage(error, "Could not load About. Using fallback content."), "error", "about");
     }
+  }
+
+  async function loadPolicyContentItem(item) {
+    if (!currentMerchant || !document.querySelector("[data-site-content-panel]")) return;
+    policyLoading = { ...policyLoading, [item.id]: true };
+    policyDrafts = {
+      ...policyDrafts,
+      [item.id]: policyDrafts[item.id] || fallbackPolicyContent(item)
+    };
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      const remotePolicy = await firebase.getSiteContent(item.docId);
+      policyDrafts = {
+        ...policyDrafts,
+        [item.id]: normalizePolicyContent(item, remotePolicy)
+      };
+      policyLoading = { ...policyLoading, [item.id]: false };
+      renderSiteContentPanel();
+      setSiteContentMessage(remotePolicy ? `${item.label} loaded.` : `Using fallback ${item.label}.`, "success", item.id);
+    } catch (error) {
+      policyLoading = { ...policyLoading, [item.id]: false };
+      policyDrafts = {
+        ...policyDrafts,
+        [item.id]: policyDrafts[item.id] || fallbackPolicyContent(item)
+      };
+      renderSiteContentPanel();
+      setSiteContentMessage(merchantErrorMessage(error, `Could not load ${item.label}. Using fallback content.`), "error", item.id);
+    }
+  }
+
+  function loadPolicyContents() {
+    POLICY_CONTENT_ITEMS.forEach((item) => {
+      loadPolicyContentItem(item);
+    });
   }
 
   async function uploadHomeHeroImage(input) {
@@ -1379,6 +1834,54 @@
     }
   }
 
+  async function savePolicyForm(form) {
+    if (!currentMerchant) return;
+    const item = policyItemById(form?.dataset?.policyId || "");
+    if (!item) return;
+    if (!(await ensurePageContentPermission())) {
+      setSiteContentMessage("pagesWrite permission is not enabled for this account.", "error", item.id);
+      return;
+    }
+    const draft = syncPolicyDraftFromForm(form);
+    if (!draft) return;
+    const payload = {
+      type: "policy",
+      policyKey: item.key,
+      title: draft.title,
+      content: draft.content,
+      isActive: draft.isActive
+    };
+
+    policySaving = { ...policySaving, [item.id]: true };
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      await firebase.saveSiteContent(item.docId, payload);
+      policySaving = { ...policySaving, [item.id]: false };
+      policyDrafts = {
+        ...policyDrafts,
+        [item.id]: normalizePolicyContent(item, payload)
+      };
+      renderSiteContentPanel();
+      setSiteContentMessage(`${item.label} saved.`, "success", item.id);
+      showMerchantToast(`${item.label} saved`);
+    } catch (error) {
+      policySaving = { ...policySaving, [item.id]: false };
+      renderSiteContentPanel();
+      console.error({
+        action: "savePolicyForm",
+        code: error?.code,
+        message: error?.message,
+        docId: item.docId,
+        payload
+      });
+      const message = error?.code === "permission-denied"
+        ? `Firestore rejected the ${item.label} save. Please check deployed firestore.rules for siteContent/${item.docId}.`
+        : `Could not save ${item.label}.`;
+      setSiteContentMessage(message, "error", item.id);
+    }
+  }
+
   function cleanupProductImages(urls) {
     Promise.allSettled(uniqueStrings(urls).map((url) => store.deleteProductImage(url)))
       .then((results) => {
@@ -1432,6 +1935,7 @@
     loadFooterContent();
     loadContactContent();
     loadAboutContent();
+    loadPolicyContents();
     renderProductRows();
   }
   function ensureMerchantModals() {
@@ -1827,10 +2331,16 @@
       footerDraft = null;
       contactDraft = null;
       aboutDraft = null;
+      policyDrafts = {};
+      policyLoading = {};
+      policySaving = {};
+      activeSiteContentId = "home";
+      siteContentPreviewMode = "desktop";
       activeHomeHeroFieldId = null;
       activeFooterFieldId = null;
       activeContactFieldId = null;
       activeAboutFieldId = null;
+      activePolicyFieldId = null;
       closeMerchantModals();
       if (container) window.location.replace(storefrontLoginUrl());
       return;
@@ -1843,10 +2353,16 @@
       footerDraft = null;
       contactDraft = null;
       aboutDraft = null;
+      policyDrafts = {};
+      policyLoading = {};
+      policySaving = {};
+      activeSiteContentId = "home";
+      siteContentPreviewMode = "desktop";
       activeHomeHeroFieldId = null;
       activeFooterFieldId = null;
       activeContactFieldId = null;
       activeAboutFieldId = null;
+      activePolicyFieldId = null;
       closeMerchantModals();
       if (container) {
         renderGate("沒有權限", `帳號 ${escapeHtml(user.email || user.uid || "")} 沒有商戶後台權限。`, `<a class="merchant-secondary-button" href="${rootPrefix()}index.html">返回首頁</a>`);
@@ -1902,6 +2418,12 @@
       await saveAboutForm(aboutForm);
       return;
     }
+    const policyForm = event.target.closest("[data-policy-form]");
+    if (policyForm && currentMerchant) {
+      event.preventDefault();
+      await savePolicyForm(policyForm);
+      return;
+    }
 
     const form = event.target.closest("[data-merchant-editor-form]");
     if (!form || !currentMerchant) return;
@@ -1941,8 +2463,31 @@
     activateAboutField(editorField.getAttribute("data-editor-field"), "editor");
   });
 
+  document.addEventListener("focusin", (event) => {
+    if (suppressPolicyFocusActivation) return;
+    const editorField = event.target.closest("[data-policy-form] [data-editor-field]");
+    if (!editorField) return;
+    activatePolicyField(editorField.getAttribute("data-editor-field"), "editor");
+  });
+
   document.addEventListener("click", async (event) => {
     if (event.target.closest("[data-merchant-dashboard-logout]")) return handleMerchantLogout();
+    const siteContentNavButton = event.target.closest("[data-site-content-nav]");
+    if (siteContentNavButton) {
+      syncVisibleSiteContentDrafts();
+      activeSiteContentId = siteContentNavButton.getAttribute("data-site-content-nav") || "home";
+      clearSiteContentVisualSelectionState();
+      setMerchantSectionActive("pages");
+      renderSiteContentPanel();
+      return;
+    }
+    const previewModeButton = event.target.closest("[data-site-content-preview-mode]");
+    if (previewModeButton) {
+      syncVisibleSiteContentDrafts();
+      siteContentPreviewMode = previewModeButton.getAttribute("data-site-content-preview-mode") || "desktop";
+      renderSiteContentPanel();
+      return;
+    }
     const previewField = event.target.closest('[data-preview-id="homeHero"] [data-preview-field]');
     if (previewField) {
       if (event.target.closest("a, button")) event.preventDefault();
@@ -1987,16 +2532,27 @@
       activateAboutField(aboutEditorField.getAttribute("data-editor-field"), "editor");
       return;
     }
+    const policyPreviewField = event.target.closest('[data-preview-id^="policy"] [data-preview-field]');
+    if (policyPreviewField) {
+      if (event.target.closest("a, button")) event.preventDefault();
+      activatePolicyField(policyPreviewField.getAttribute("data-preview-field"), "preview");
+      return;
+    }
+    const policyEditorField = event.target.closest("[data-policy-form] [data-editor-field]");
+    if (policyEditorField) {
+      activatePolicyField(policyEditorField.getAttribute("data-editor-field"), "editor");
+      return;
+    }
+    if (event.target.closest(".merchant-site-content__preview-scroll a, .merchant-site-content__preview-scroll button")) {
+      event.preventDefault();
+      return;
+    }
 
     const sectionButton = event.target.closest("[data-merchant-section]");
     if (sectionButton) {
       const section = sectionButton.dataset.merchantSection;
-      document.querySelectorAll("[data-merchant-section]").forEach((button) => {
-        button.classList.toggle("is-active", button === sectionButton);
-      });
-      document.querySelectorAll("[data-merchant-panel]").forEach((panel) => {
-        panel.classList.toggle("is-active", panel.dataset.merchantPanel === section);
-      });
+      setMerchantSectionActive(section);
+      if (section === "pages") updateSiteContentSidebarNav();
       return;
     }
 

@@ -203,6 +203,33 @@ service cloud.firestore {
         && data.updatedBy == request.auth.uid;
     }
 
+    function isPolicyPayload(docId, data) {
+      return data.keys().hasOnly([
+          "type",
+          "policyKey",
+          "title",
+          "content",
+          "isActive",
+          "updatedAt",
+          "updatedBy"
+        ])
+        && data.type == "policy"
+        && (
+          (docId == "policyDelivery" && data.policyKey == "delivery")
+          || (docId == "policyPayment" && data.policyKey == "payment")
+          || (docId == "policyRefund" && data.policyKey == "refund")
+        )
+        && data.policyKey in ["delivery", "payment", "refund"]
+        && data.title is string
+        && data.title.size() <= 120
+        && data.content is string
+        && data.content.size() <= 4000
+        && data.isActive is bool
+        && data.updatedAt is timestamp
+        && data.updatedBy is string
+        && data.updatedBy == request.auth.uid;
+    }
+
     match /merchantRoles/{userId} {
       allow read: if isOwner(userId) || isMerchant();
       allow create, update, delete: if false;
@@ -240,6 +267,7 @@ service cloud.firestore {
           || (docId == "footer" && isFooterPayload(request.resource.data))
           || (docId == "contact" && isContactPayload(request.resource.data))
           || (docId == "about" && isAboutPayload(request.resource.data))
+          || (docId in ["policyDelivery", "policyPayment", "policyRefund"] && isPolicyPayload(docId, request.resource.data))
         );
       allow delete: if false;
     }

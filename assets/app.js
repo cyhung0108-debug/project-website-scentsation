@@ -21,6 +21,8 @@
     contactContentLoadStarted: false,
     homeHero: null,
     homeHeroLoadStarted: false,
+    policyContent: {},
+    policyContentLoadStarted: {},
     siteFooter: null,
     siteFooterLoadStarted: false,
     priceMin: 0,
@@ -237,6 +239,46 @@
       ...state.aboutContent,
       title: state.aboutContent.title || fallback.title,
       imageAlt: state.aboutContent.imageAlt || fallback.imageAlt
+    };
+  }
+
+  const POLICY_DOC_IDS = {
+    delivery: "policyDelivery",
+    payment: "policyPayment",
+    refund: "policyRefund"
+  };
+
+  function fallbackPolicyContent(policyKey) {
+    const policy = siteConfig.policies?.[policyKey] || {};
+    return {
+      type: "policy",
+      policyKey,
+      title: String(policy.title || "店舖政策"),
+      content: String(policy.content || "請在 assets/site-config.js 填寫此政策內容。"),
+      isActive: policy.isActive !== false
+    };
+  }
+
+  function normalizeRemotePolicyContent(data, policyKey) {
+    if (!data || data.type !== "policy" || data.policyKey !== policyKey || typeof data.isActive !== "boolean") return null;
+    if (typeof data.title !== "string" || typeof data.content !== "string") return null;
+    return {
+      type: "policy",
+      policyKey,
+      title: data.title,
+      content: data.content,
+      isActive: data.isActive
+    };
+  }
+
+  function currentPolicyContent(policyKey) {
+    const fallback = fallbackPolicyContent(policyKey);
+    const remote = state.policyContent?.[policyKey];
+    if (!remote) return fallback;
+    return {
+      ...fallback,
+      ...remote,
+      title: remote.title || fallback.title
     };
   }
 
@@ -1340,7 +1382,7 @@
     }
   }
 
-  function renderPolicyPage() {
+  function renderPolicyPageLegacy() {
     const container = $("[data-policy-page]");
     if (!container) return;
 
@@ -1355,6 +1397,44 @@
         <div class="policy-page__content"><p>${textToHtml(content)}</p></div>
       </section>
     `;
+  }
+
+  function renderPolicyPage() {
+    const container = $("[data-policy-page]");
+    if (!container) return;
+
+    const policyKey = document.body.dataset.policyType || container.dataset.policyType || "";
+    const policy = currentPolicyContent(policyKey);
+    const title = policy.title || "Store Policy";
+    const content = policy.content || "";
+    document.title = `${title} - APOTHEKE`;
+    container.innerHTML = `
+      <section class="info-page policy-page">
+        <h1>${escapeHtml(title)}</h1>
+        ${policy.isActive ? `<div class="policy-page__content"><p>${textToHtml(content)}</p></div>` : ""}
+      </section>
+    `;
+  }
+
+  async function loadPolicyContent() {
+    const container = $("[data-policy-page]");
+    if (!container) return;
+    const policyKey = document.body.dataset.policyType || container.dataset.policyType || "";
+    const docId = POLICY_DOC_IDS[policyKey];
+    if (!docId || state.policyContentLoadStarted[policyKey]) return;
+    state.policyContentLoadStarted[policyKey] = true;
+    try {
+      const firebase = await getFirebaseService();
+      const content = normalizeRemotePolicyContent(await firebase.getSiteContent(docId), policyKey);
+      if (!content) return;
+      state.policyContent = {
+        ...state.policyContent,
+        [policyKey]: content
+      };
+      renderPolicyPage();
+    } catch (error) {
+      console.warn(`${policyKey || "Policy"} content load failed; using site-config fallback.`, error);
+    }
   }
 
   function renderHomePage() {
@@ -2076,6 +2156,7 @@
   renderContactPage();
   loadContactContent();
   renderPolicyPage();
+  loadPolicyContent();
   renderSiteFooter();
   loadSiteFooterContent();
   window.localStorage.removeItem(LEGACY_USERS_KEY);

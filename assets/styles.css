@@ -165,6 +165,39 @@
   background: rgba(255, 255, 255, 0.16);
 }
 
+.merchant-dashboard__page-subnav {
+  display: none;
+  gap: 2px;
+  margin: -2px 0 6px 12px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.merchant-dashboard__sidebar button[data-merchant-section="pages"].is-active + .merchant-dashboard__page-subnav {
+  display: grid;
+}
+
+.merchant-dashboard__page-subnav button {
+  min-height: 32px;
+  padding: 6px 10px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+}
+
+.merchant-dashboard__page-subnav button span,
+.merchant-dashboard__page-subnav button small {
+  display: block;
+}
+
+.merchant-dashboard__page-subnav button small {
+  display: none;
+}
+
+.merchant-dashboard__page-subnav button.is-active {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.2);
+}
+
 .merchant-dashboard__logout {
   margin-top: 0;
   border-top: 1px solid rgba(255, 255, 255, 0.28) !important;
@@ -215,6 +248,11 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .merchant-dashboard__page-subnav {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+
   .merchant-dashboard__content {
     padding: 18px 16px 24px;
   }
@@ -231,6 +269,10 @@
 
   .merchant-dashboard__sidebar nav {
     grid-template-columns: 1fr;
+  }
+
+  .merchant-dashboard__page-subnav {
+    margin-left: 12px;
   }
 }
 
@@ -2718,6 +2760,146 @@ h6 {
   font-weight: 500;
 }
 
+.merchant-site-content__studio {
+  height: calc(100vh - 136px);
+  min-height: 640px;
+  display: grid;
+  grid-template-columns: minmax(520px, 1fr) minmax(330px, 390px);
+  gap: 14px;
+  align-items: stretch;
+  padding-top: 18px;
+}
+
+.merchant-site-content__preview-pane,
+.merchant-site-content__editor-pane {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid #d8d4cc;
+  background: #fff;
+}
+
+.merchant-site-content__pane-header {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #e1ded7;
+  padding: 14px 16px;
+}
+
+.merchant-site-content__pane-header span {
+  display: block;
+  color: #81786f;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.merchant-site-content__pane-header strong {
+  display: block;
+  color: #2f2b28;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.merchant-site-content__preview-pane,
+.merchant-site-content__editor-pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.merchant-site-content__pane-header small {
+  color: #81786f;
+  font-size: 12px;
+}
+
+.merchant-site-content__viewport {
+  display: inline-flex;
+  border: 1px solid #d8d4cc;
+}
+
+.merchant-site-content__viewport button {
+  min-height: 30px;
+  border: 0;
+  border-right: 1px solid #d8d4cc;
+  padding: 0 10px;
+  background: #fff;
+  color: #665f55;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.merchant-site-content__viewport button:last-child {
+  border-right: 0;
+}
+
+.merchant-site-content__viewport button:hover,
+.merchant-site-content__viewport button.is-active {
+  color: #2f2b28;
+  background: #f2eee6;
+}
+
+.merchant-site-content__preview-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+  background: #e8e5df;
+}
+
+.merchant-site-content__device {
+  width: 100%;
+  min-height: 100%;
+  margin: 0 auto;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(47, 43, 40, 0.12);
+}
+
+.merchant-site-content__device--desktop {
+  max-width: 1060px;
+}
+
+.merchant-site-content__device--tablet {
+  max-width: 760px;
+}
+
+.merchant-site-content__device--tablet .site-header {
+  grid-template-columns: 160px minmax(0, 1fr) 52px;
+  padding-right: 24px;
+  padding-left: 24px;
+}
+
+.merchant-site-content__device--tablet .desktop-nav {
+  min-width: 0;
+  gap: 16px;
+}
+
+.merchant-site-content__device--tablet .header-actions {
+  min-width: 0;
+  justify-self: end;
+}
+
+.merchant-site-content__device--tablet .account-link {
+  display: none;
+}
+
+.merchant-site-content__device--mobile {
+  max-width: 390px;
+}
+
+.merchant-site-content__device--policyDelivery,
+.merchant-site-content__device--policyPayment,
+.merchant-site-content__device--policyRefund {
+  min-height: 0;
+}
+
+.merchant-site-content__editor-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+}
+
 .merchant-site-content__panel {
   display: grid;
   grid-template-columns: minmax(0, 0.95fr) minmax(320px, 1.05fr);
@@ -2735,10 +2917,91 @@ h6 {
   color: #746d62;
 }
 
+.merchant-site-content__preview-page {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  place-items: initial;
+  overflow: visible;
+  background: #fff;
+  color: var(--ink);
+}
+
+.merchant-site-content__preview-page--policy {
+  min-height: 0;
+}
+
+.merchant-site-content__preview-page main {
+  width: 100%;
+  flex: 1 0 auto;
+}
+
+.merchant-site-content__preview-page--policy main {
+  flex: 0 0 auto;
+}
+
+.merchant-site-content__preview-page img {
+  height: auto;
+  min-height: 0;
+}
+
+.merchant-site-content__preview-page .site-header {
+  position: sticky;
+  top: 0;
+}
+
+.merchant-site-content__preview-page .mobile-menu-button {
+  display: none;
+}
+
+.merchant-site-content__preview-page .home-banner img {
+  aspect-ratio: 1414 / 516;
+}
+
+.merchant-site-content__preview-page .about-page__image img {
+  aspect-ratio: 4 / 5;
+}
+
+.merchant-site-content__preview-products .product-grid {
+  pointer-events: none;
+}
+
+.merchant-site-content__product-placeholder {
+  min-height: 230px;
+  background:
+    linear-gradient(#f3f0eb, #f3f0eb) top / 100% 78% no-repeat,
+    linear-gradient(#ded8cf, #ded8cf) left bottom 32px / 70% 12px no-repeat,
+    linear-gradient(#ece8e1, #ece8e1) left bottom 8px / 42% 10px no-repeat;
+}
+
+.merchant-site-content__footer-page {
+  min-height: 420px;
+  display: grid;
+  align-content: center;
+}
+
+.merchant-site-content__device .merchant-site-content__preview-frame--home,
+.merchant-site-content__device .merchant-site-content__preview-frame--home > img {
+  min-height: 420px;
+}
+
+.merchant-site-content__device--tablet .merchant-site-content__preview-frame--home,
+.merchant-site-content__device--tablet .merchant-site-content__preview-frame--home > img {
+  min-height: 360px;
+}
+
+.merchant-site-content__device--mobile .merchant-site-content__preview-frame--home,
+.merchant-site-content__device--mobile .merchant-site-content__preview-frame--home > img {
+  min-height: 300px;
+}
+
 .merchant-site-content__preview-frame[data-preview-id="homeHero"],
 .merchant-site-content__preview-frame[data-preview-id="footer"],
 .merchant-site-content__preview-frame[data-preview-id="contact"],
 .merchant-site-content__preview-frame[data-preview-id="about"],
+.merchant-site-content__preview-frame[data-preview-id="policyDelivery"],
+.merchant-site-content__preview-frame[data-preview-id="policyPayment"],
+.merchant-site-content__preview-frame[data-preview-id="policyRefund"],
 .merchant-site-content [data-preview-field],
 .merchant-site-content__form [data-editor-field] {
   scroll-margin: 28px;
@@ -2771,6 +3034,19 @@ h6 {
   height: 100%;
   min-height: 300px;
   object-fit: cover;
+}
+
+.merchant-site-content__preview-page img {
+  height: auto;
+  min-height: 0;
+}
+
+.merchant-site-content__preview-page .home-banner img {
+  aspect-ratio: 1414 / 516;
+}
+
+.merchant-site-content__preview-page .about-page__image img {
+  aspect-ratio: 4 / 5;
 }
 
 .merchant-site-content__preview-frame--footer {
@@ -2956,6 +3232,132 @@ h6 {
   object-fit: cover;
 }
 
+.merchant-site-content__preview-frame--policy {
+  min-height: 300px;
+  place-items: stretch;
+  padding: 24px;
+  background: #f6f3ee;
+  color: #2f2b28;
+}
+
+.merchant-site-content__policy-preview {
+  width: 100%;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.merchant-site-content__policy-preview strong {
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.1;
+}
+
+.merchant-site-content__policy-preview div {
+  margin: 0;
+  color: #514b45;
+  line-height: 1.65;
+}
+
+.merchant-site-content__device--mobile .merchant-site-content__contact-grid,
+.merchant-site-content__device--mobile .merchant-site-content__about-preview {
+  grid-template-columns: 1fr;
+}
+
+.merchant-site-content__device--mobile .site-header {
+  grid-template-columns: 42px 1fr auto;
+  gap: 12px;
+}
+
+.merchant-site-content__device--mobile .mobile-menu-button {
+  display: block;
+}
+
+.merchant-site-content__device--mobile .desktop-nav {
+  display: none;
+}
+
+.merchant-site-content__device--mobile .header-actions {
+  gap: 10px;
+}
+
+.merchant-site-content__device--mobile .account-link {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.merchant-site-content__device--mobile .info-page {
+  padding: 30px 20px 56px;
+}
+
+.merchant-site-content__device--mobile .info-page h1 {
+  font-size: 34px;
+}
+
+.merchant-site-content__device--mobile .home-banner img {
+  aspect-ratio: 16 / 9;
+  object-position: center;
+}
+
+.merchant-site-content__device--mobile .home-hero__content {
+  position: static;
+  width: 100%;
+  padding: 20px 20px 0;
+  color: var(--ink);
+  text-shadow: none;
+  background: #fff;
+}
+
+.merchant-site-content__device--mobile .home-hero__content h1 {
+  margin-bottom: 12px;
+  color: var(--ink);
+  font-size: 34px;
+  line-height: 1.08;
+}
+
+.merchant-site-content__device--mobile .home-hero__content p {
+  margin-bottom: 18px;
+  color: #4d4948;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.merchant-site-content__device--mobile .home-hero__button {
+  color: var(--ink);
+}
+
+.merchant-site-content__device--mobile .home-products {
+  padding: 24px 20px 48px;
+}
+
+.merchant-site-content__device--mobile .home-products h1 {
+  margin-bottom: 18px;
+  font-size: 28px;
+}
+
+.merchant-site-content__device--mobile .product-grid {
+  grid-template-columns: 1fr;
+  gap: 22px;
+}
+
+.merchant-site-content__device--mobile .contact-layout,
+.merchant-site-content__device--mobile .about-page__layout,
+.merchant-site-content__device--mobile .site-footer__inner {
+  grid-template-columns: 1fr;
+}
+
+.merchant-site-content__device--mobile .map-panel,
+.merchant-site-content__device--mobile .map-panel iframe,
+.merchant-site-content__device--mobile .map-placeholder {
+  min-height: 320px;
+}
+
+.merchant-site-content__device--mobile .merchant-site-content__contact-heading strong,
+.merchant-site-content__device--mobile .merchant-site-content__about-copy strong,
+.merchant-site-content__device--mobile .merchant-site-content__policy-preview strong {
+  font-size: 23px;
+}
+
 .merchant-site-content__preview-copy {
   position: absolute;
   left: 20px;
@@ -3115,6 +3517,17 @@ h6 {
     grid-template-columns: 1fr;
   }
 
+  .merchant-site-content__studio {
+    height: auto;
+    min-height: 0;
+    grid-template-columns: 1fr;
+  }
+
+  .merchant-site-content__preview-scroll,
+  .merchant-site-content__editor-scroll {
+    max-height: 70vh;
+  }
+
   .merchant-site-content__panel {
     grid-template-columns: 1fr;
   }
@@ -3134,6 +3547,11 @@ h6 {
   .merchant-form__row {
     grid-template-columns: 1fr;
     gap: 0;
+  }
+
+  .merchant-site-content__pane-header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .merchant-site-content__preview-frame,
