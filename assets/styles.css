@@ -5334,9 +5334,21 @@ h6 {
 
 .checkout-card-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(120px, 0.8fr) minmax(100px, 0.6fr);
+  grid-template-columns: minmax(0, 1.6fr) minmax(120px, 0.8fr) minmax(96px, 0.55fr);
   gap: 14px;
   margin-top: 14px;
+}
+
+.checkout-card-grid label,
+.checkout-section .checkout-card-grid label + label {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 0;
+}
+
+.checkout-card-grid input {
+  width: 100%;
 }
 
 .checkout-helper-text {
