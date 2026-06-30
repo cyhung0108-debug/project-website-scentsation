@@ -23,6 +23,16 @@
     currentUserProfile: null,
     currentUserOrders: [],
     orderConfirmation: null,
+    aboutContent: null,
+    aboutContentLoadStarted: false,
+    contactContent: null,
+    contactContentLoadStarted: false,
+    homeHero: null,
+    homeHeroLoadStarted: false,
+    policyContent: {},
+    policyContentLoadStarted: {},
+    siteFooter: null,
+    siteFooterLoadStarted: false,
     priceMin: 0,
     priceMax: 0,
     priceLimit: 0,
@@ -61,6 +71,240 @@
 
   function rootPrefix() {
     return document.body?.dataset.rootPrefix || "";
+  }
+
+  function isAbsoluteOrRootUrl(value) {
+    return /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(String(value || "").trim());
+  }
+
+  function resolveAssetUrl(value) {
+    const url = String(value || "").trim();
+    if (!url) return "";
+    return isAbsoluteOrRootUrl(url) ? url : `${rootPrefix()}${url}`;
+  }
+
+  function resolveLinkUrl(value) {
+    const href = String(value || "").trim();
+    if (!href || /^javascript:/i.test(href)) return "";
+    if (href.startsWith("#") || isAbsoluteOrRootUrl(href)) return href;
+    return `${rootPrefix()}${href}`;
+  }
+
+  function fallbackHomeHero(home = siteConfig.home || {}) {
+    return {
+      type: "homeHero",
+      title: String(home.heroTitle || ""),
+      subtitle: String(home.heroSubtitle || ""),
+      imageUrl: String(home.bannerImage || "assets/images/banner.jpg"),
+      imagePath: "",
+      imageAlt: String(home.heroImageAlt || home.bannerAlt || "APOTHEKE"),
+      buttonText: String(home.heroButtonText || ""),
+      buttonHref: String(home.heroButtonHref || ""),
+      isActive: home.heroIsActive !== false
+    };
+  }
+
+  function normalizeRemoteHomeHero(data) {
+    if (!data || data.type !== "homeHero" || typeof data.isActive !== "boolean") return null;
+    const stringFields = ["title", "subtitle", "imageUrl", "imagePath", "imageAlt", "buttonText", "buttonHref"];
+    if (!stringFields.every((field) => typeof data[field] === "string")) return null;
+    return {
+      type: "homeHero",
+      title: data.title,
+      subtitle: data.subtitle,
+      imageUrl: data.imageUrl,
+      imagePath: data.imagePath,
+      imageAlt: data.imageAlt,
+      buttonText: data.buttonText,
+      buttonHref: data.buttonHref,
+      isActive: data.isActive
+    };
+  }
+
+  function currentHomeHero(home = siteConfig.home || {}) {
+    const fallback = fallbackHomeHero(home);
+    if (!state.homeHero) return fallback;
+    return {
+      ...fallback,
+      ...state.homeHero,
+      imageUrl: state.homeHero.imageUrl || fallback.imageUrl,
+      imageAlt: state.homeHero.imageAlt || fallback.imageAlt
+    };
+  }
+
+  function fallbackSiteFooter() {
+    const footer = siteConfig.footer || {};
+    const contact = siteConfig.contact || {};
+    const logoText = String(footer.logoText || $(".brand")?.textContent.trim() || "APOTHEKE");
+    return {
+      type: "footer",
+      logoText,
+      description: String(footer.description || ""),
+      phone: String(footer.phone || contact.phone || "+852 0000 0000"),
+      email: String(footer.email || contact.email || ""),
+      address: String(footer.address || contact.address || "璜嬪湪閫欒！濉搴楅嫪鍦板潃"),
+      copyright: String(footer.copyright || `© ${new Date().getFullYear()} ${logoText}. All rights reserved.`),
+      instagramUrl: String(footer.instagramUrl || ""),
+      facebookUrl: String(footer.facebookUrl || ""),
+      isActive: footer.isActive !== false
+    };
+  }
+
+  function normalizeRemoteSiteFooter(data) {
+    if (!data || data.type !== "footer" || typeof data.isActive !== "boolean") return null;
+    const stringFields = ["logoText", "description", "phone", "email", "address", "copyright", "instagramUrl", "facebookUrl"];
+    if (!stringFields.every((field) => typeof data[field] === "string")) return null;
+    return {
+      type: "footer",
+      logoText: data.logoText,
+      description: data.description,
+      phone: data.phone,
+      email: data.email,
+      address: data.address,
+      copyright: data.copyright,
+      instagramUrl: data.instagramUrl,
+      facebookUrl: data.facebookUrl,
+      isActive: data.isActive
+    };
+  }
+
+  function currentSiteFooter() {
+    const fallback = fallbackSiteFooter();
+    if (!state.siteFooter) return fallback;
+    return {
+      ...fallback,
+      ...state.siteFooter,
+      logoText: state.siteFooter.logoText || fallback.logoText,
+      copyright: state.siteFooter.copyright || fallback.copyright
+    };
+  }
+
+  function fallbackContactContent() {
+    const contact = siteConfig.contact || {};
+    return {
+      type: "contact",
+      title: String(contact.title || "聯絡我們"),
+      subtitle: String(contact.subtitle || ""),
+      address: String(contact.address || "請在這裡填寫店鋪地址"),
+      phone: String(contact.phone || "+852 0000 0000"),
+      email: String(contact.email || ""),
+      openingHours: String(contact.openingHours || "星期一至日 11:00 - 20:00"),
+      googleMapEmbedUrl: String(contact.googleMapEmbedUrl || ""),
+      other: String(contact.other || "請在這裡填寫其他聯絡資料。"),
+      isActive: contact.isActive !== false
+    };
+  }
+
+  function normalizeRemoteContactContent(data) {
+    if (!data || data.type !== "contact" || typeof data.isActive !== "boolean") return null;
+    const stringFields = ["title", "subtitle", "address", "phone", "email", "openingHours", "googleMapEmbedUrl", "other"];
+    if (!stringFields.every((field) => typeof data[field] === "string")) return null;
+    return {
+      type: "contact",
+      title: data.title,
+      subtitle: data.subtitle,
+      address: data.address,
+      phone: data.phone,
+      email: data.email,
+      openingHours: data.openingHours,
+      googleMapEmbedUrl: data.googleMapEmbedUrl,
+      other: data.other,
+      isActive: data.isActive
+    };
+  }
+
+  function currentContactContent() {
+    const fallback = fallbackContactContent();
+    if (!state.contactContent) return fallback;
+    return {
+      ...fallback,
+      ...state.contactContent,
+      title: state.contactContent.title || fallback.title
+    };
+  }
+
+  function fallbackAboutContent() {
+    const about = siteConfig.about || {};
+    const firstSection = Array.isArray(about.sections) ? about.sections[0] || {} : {};
+    return {
+      type: "about",
+      title: String(about.title || "關於我們"),
+      subtitle: String(about.subtitle || about.companyName || ""),
+      intro: String(about.intro || "請在 assets/site-config.js 填寫公司簡介。"),
+      sectionTitle: String(about.sectionTitle || firstSection.heading || ""),
+      sectionContent: String(about.sectionContent || firstSection.content || ""),
+      imageUrl: String(about.imageUrl || ""),
+      imageAlt: String(about.imageAlt || about.title || "About"),
+      isActive: about.isActive !== false
+    };
+  }
+
+  function normalizeRemoteAboutContent(data) {
+    if (!data || data.type !== "about" || typeof data.isActive !== "boolean") return null;
+    const stringFields = ["title", "subtitle", "intro", "sectionTitle", "sectionContent", "imageUrl", "imageAlt"];
+    if (!stringFields.every((field) => typeof data[field] === "string")) return null;
+    return {
+      type: "about",
+      title: data.title,
+      subtitle: data.subtitle,
+      intro: data.intro,
+      sectionTitle: data.sectionTitle,
+      sectionContent: data.sectionContent,
+      imageUrl: data.imageUrl,
+      imageAlt: data.imageAlt,
+      isActive: data.isActive
+    };
+  }
+
+  function currentAboutContent() {
+    const fallback = fallbackAboutContent();
+    if (!state.aboutContent) return fallback;
+    return {
+      ...fallback,
+      ...state.aboutContent,
+      title: state.aboutContent.title || fallback.title,
+      imageAlt: state.aboutContent.imageAlt || fallback.imageAlt
+    };
+  }
+
+  const POLICY_DOC_IDS = {
+    delivery: "policyDelivery",
+    payment: "policyPayment",
+    refund: "policyRefund"
+  };
+
+  function fallbackPolicyContent(policyKey) {
+    const policy = siteConfig.policies?.[policyKey] || {};
+    return {
+      type: "policy",
+      policyKey,
+      title: String(policy.title || "店舖政策"),
+      content: String(policy.content || "請在 assets/site-config.js 填寫此政策內容。"),
+      isActive: policy.isActive !== false
+    };
+  }
+
+  function normalizeRemotePolicyContent(data, policyKey) {
+    if (!data || data.type !== "policy" || data.policyKey !== policyKey || typeof data.isActive !== "boolean") return null;
+    if (typeof data.title !== "string" || typeof data.content !== "string") return null;
+    return {
+      type: "policy",
+      policyKey,
+      title: data.title,
+      content: data.content,
+      isActive: data.isActive
+    };
+  }
+
+  function currentPolicyContent(policyKey) {
+    const fallback = fallbackPolicyContent(policyKey);
+    const remote = state.policyContent?.[policyKey];
+    if (!remote) return fallback;
+    return {
+      ...fallback,
+      ...remote,
+      title: remote.title || fallback.title
+    };
   }
 
   function productUrl(productId) {
@@ -1801,7 +2045,7 @@
     setupProductImageObserver();
   }
 
-  function renderAboutPage() {
+  function renderAboutPageLegacy() {
     const container = $("[data-about-page]");
     if (!container) return;
     const about = siteConfig.about || {};
@@ -1809,8 +2053,8 @@
     container.innerHTML = `
       <section class="info-page">
         <h1>${escapeHtml(about.title || "關於我們")}</h1>
-        <h2>${escapeHtml(about.companyName || "品牌資訊")}</h2>
-        <p class="info-intro">${textToHtml(about.intro || "請在 assets/site-config.js 補上品牌介紹內容。")}</p>
+        <h2>${escapeHtml(about.companyName || "你的公司名稱")}</h2>
+        <p class="info-intro">${textToHtml(about.intro || "請在 assets/site-config.js 填寫公司簡介。")}</p>
         <div class="info-sections">
           ${(about.sections || []).map((section) => `
             <article>
@@ -1823,7 +2067,7 @@
     `;
   }
 
-  function renderContactPage() {
+  function renderContactPageLegacy() {
     const container = $("[data-contact-page]");
     if (!container) return;
     const contact = siteConfig.contact || {};
@@ -1835,11 +2079,11 @@
         <div class="contact-layout">
           <div class="contact-details">
             <article>
-              <h2>店舖地址</h2>
-              <p>${textToHtml(contact.address || "請在這裡填寫店舖地址")}</p>
+              <h2>店鋪地址</h2>
+              <p>${textToHtml(contact.address || "請在這裡填寫店鋪地址")}</p>
             </article>
             <article>
-              <h2>營業時間</h2>
+              <h2>開店時間</h2>
               <p>${textToHtml(contact.openingHours || "星期一至日 11:00 - 20:00")}</p>
             </article>
             <article>
@@ -1847,18 +2091,148 @@
               <p>${textToHtml(contact.phone || "+852 0000 0000")}</p>
             </article>
             <article>
-              <h2>其他資訊</h2>
-              <p>${textToHtml(contact.other || "請在設定中補上其他聯絡資訊。")}</p>
+              <h2>其他資料</h2>
+              <p>${textToHtml(contact.other || "請在這裡填寫其他聯絡資料。")}</p>
             </article>
           </div>
           <div class="map-panel">
             ${mapUrl
               ? `<iframe src="${escapeHtml(mapUrl)}" loading="lazy" allowfullscreen referrerpolicy="no-referrer-when-downgrade" title="Google Map"></iframe>`
-              : `<div class="map-placeholder">請在設定中填入 Google Map 嵌入連結</div>`}
+              : `<div class="map-placeholder">請在後台設定 Google Map 連結</div>`}
           </div>
         </div>
       </section>
     `;
+  }
+
+  function renderAboutPage() {
+    const container = $("[data-about-page]");
+    if (!container) return;
+    const about = currentAboutContent();
+    const aboutImage = resolveAssetUrl(about.imageUrl);
+    document.title = `${about.title || "About"} - APOTHEKE`;
+
+    if (!about.isActive) {
+      container.innerHTML = `
+        <section class="info-page about-page">
+          <h1>${escapeHtml(about.title || "About")}</h1>
+          ${about.subtitle ? `<h2>${escapeHtml(about.subtitle)}</h2>` : ""}
+        </section>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <section class="info-page about-page">
+        <div class="about-page__layout">
+          <div class="about-page__content">
+            <h1>${escapeHtml(about.title || "About")}</h1>
+            ${about.subtitle ? `<h2>${escapeHtml(about.subtitle)}</h2>` : ""}
+            ${about.intro ? `<p class="info-intro">${textToHtml(about.intro)}</p>` : ""}
+            ${(about.sectionTitle || about.sectionContent) ? `
+              <div class="info-sections">
+                <article>
+                  ${about.sectionTitle ? `<h3>${escapeHtml(about.sectionTitle)}</h3>` : ""}
+                  ${about.sectionContent ? `<p>${textToHtml(about.sectionContent)}</p>` : ""}
+                </article>
+              </div>
+            ` : ""}
+          </div>
+          ${aboutImage ? `
+            <figure class="about-page__image">
+              <img src="${escapeHtml(aboutImage)}" alt="${escapeHtml(about.imageAlt || about.title || "About")}">
+            </figure>
+          ` : ""}
+        </div>
+      </section>
+    `;
+  }
+
+  async function loadAboutContent() {
+    if (state.aboutContentLoadStarted || !document.querySelector("[data-about-page]")) return;
+    state.aboutContentLoadStarted = true;
+    try {
+      const firebase = await getFirebaseService();
+      const content = normalizeRemoteAboutContent(await firebase.getSiteContent("about"));
+      if (!content) return;
+      state.aboutContent = content;
+      renderAboutPage();
+    } catch (error) {
+      console.warn("About content load failed; using site-config fallback.", error);
+    }
+  }
+
+  function renderContactPage() {
+    const container = $("[data-contact-page]");
+    if (!container) return;
+    const contact = currentContactContent();
+    document.title = `${contact.title || "Contact"} - APOTHEKE`;
+    const mapUrl = String(contact.googleMapEmbedUrl || "").trim();
+    const phone = String(contact.phone || "").trim();
+    const phoneHref = phone.replace(/[^+\d]/g, "");
+    const email = String(contact.email || "").trim();
+
+    if (!contact.isActive) {
+      container.innerHTML = `
+        <section class="info-page contact-page">
+          <h1>${escapeHtml(contact.title || "Contact")}</h1>
+          ${contact.subtitle ? `<p class="info-intro">${textToHtml(contact.subtitle)}</p>` : ""}
+        </section>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <section class="info-page contact-page">
+        <h1>${escapeHtml(contact.title || "Contact")}</h1>
+        ${contact.subtitle ? `<p class="info-intro">${textToHtml(contact.subtitle)}</p>` : ""}
+        <div class="contact-layout">
+          <div class="contact-details">
+            <article>
+              <h2>Address</h2>
+              <p>${textToHtml(contact.address)}</p>
+            </article>
+            <article>
+              <h2>Opening Hours</h2>
+              <p>${textToHtml(contact.openingHours)}</p>
+            </article>
+            <article>
+              <h2>Phone</h2>
+              <p>${phoneHref ? `<a href="tel:${escapeHtml(phoneHref)}">${escapeHtml(phone)}</a>` : escapeHtml(phone)}</p>
+            </article>
+            ${email ? `
+              <article>
+                <h2>Email</h2>
+                <p><a href="mailto:${escapeHtml(email)}">${escapeHtml(email)}</a></p>
+              </article>
+            ` : ""}
+            <article>
+              <h2>Other</h2>
+              <p>${textToHtml(contact.other)}</p>
+            </article>
+          </div>
+          <div class="map-panel">
+            ${mapUrl
+              ? `<iframe src="${escapeHtml(mapUrl)}" loading="lazy" allowfullscreen referrerpolicy="no-referrer-when-downgrade" title="Google Map"></iframe>`
+              : `<div class="map-placeholder">Google Map has not been configured.</div>`}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  async function loadContactContent() {
+    if (state.contactContentLoadStarted || !document.querySelector("[data-contact-page]")) return;
+    state.contactContentLoadStarted = true;
+    try {
+      const firebase = await getFirebaseService();
+      const content = normalizeRemoteContactContent(await firebase.getSiteContent("contact"));
+      if (!content) return;
+      state.contactContent = content;
+      renderContactPage();
+    } catch (error) {
+      console.warn("Contact content load failed; using site-config fallback.", error);
+    }
   }
 
   function profileOrderAmount(order) {
@@ -1986,14 +2360,14 @@
     `;
   }
 
-  function renderPolicyPage() {
+  function renderPolicyPageLegacy() {
     const container = $("[data-policy-page]");
     if (!container) return;
 
     const type = document.body.dataset.policyType || container.dataset.policyType || "";
     const policy = siteConfig.policies?.[type];
-    const title = policy?.title || "政策內容";
-    const content = policy?.content || "請在 assets/site-config.js 補上政策內容。";
+    const title = policy?.title || "商店政策";
+    const content = policy?.content || "請在 assets/site-config.js 填寫此政策內容。";
     document.title = `${title} - APOTHEKE`;
     container.innerHTML = `
       <section class="info-page policy-page">
@@ -2003,6 +2377,44 @@
     `;
   }
 
+  function renderPolicyPage() {
+    const container = $("[data-policy-page]");
+    if (!container) return;
+
+    const policyKey = document.body.dataset.policyType || container.dataset.policyType || "";
+    const policy = currentPolicyContent(policyKey);
+    const title = policy.title || "Store Policy";
+    const content = policy.content || "";
+    document.title = `${title} - APOTHEKE`;
+    container.innerHTML = `
+      <section class="info-page policy-page">
+        <h1>${escapeHtml(title)}</h1>
+        ${policy.isActive ? `<div class="policy-page__content"><p>${textToHtml(content)}</p></div>` : ""}
+      </section>
+    `;
+  }
+
+  async function loadPolicyContent() {
+    const container = $("[data-policy-page]");
+    if (!container) return;
+    const policyKey = document.body.dataset.policyType || container.dataset.policyType || "";
+    const docId = POLICY_DOC_IDS[policyKey];
+    if (!docId || state.policyContentLoadStarted[policyKey]) return;
+    state.policyContentLoadStarted[policyKey] = true;
+    try {
+      const firebase = await getFirebaseService();
+      const content = normalizeRemotePolicyContent(await firebase.getSiteContent(docId), policyKey);
+      if (!content) return;
+      state.policyContent = {
+        ...state.policyContent,
+        [policyKey]: content
+      };
+      renderPolicyPage();
+    } catch (error) {
+      console.warn(`${policyKey || "Policy"} content load failed; using site-config fallback.`, error);
+    }
+  }
+
   function renderHomePage() {
     const container = $("[data-home-page]");
     if (!container) return;
@@ -2010,33 +2422,66 @@
     const home = siteConfig.home || {};
     const maxProducts = Math.max(1, Number.parseInt(home.maxProducts, 10) || 8);
     const featuredProducts = products.filter((product) => product.showOnHome === true).slice(0, maxProducts);
-    const bannerImage = `${rootPrefix()}${home.bannerImage || "assets/images/banner.jpg"}`;
+    const hero = currentHomeHero(home);
+    const heroImage = resolveAssetUrl(hero.imageUrl);
+    const heroHref = resolveLinkUrl(hero.buttonHref);
+    const heroHasCopy = Boolean(hero.title || hero.subtitle || (hero.buttonText && heroHref));
     container.innerHTML = `
-      <section class="home-banner" aria-label="${escapeHtml(home.bannerAlt || "首頁 Banner")}">
-        <img src="${escapeHtml(bannerImage)}" alt="${escapeHtml(home.bannerAlt || "APOTHEKE 首頁 Banner")}">
-      </section>
+      ${hero.isActive ? `
+        <section class="home-banner home-hero" aria-label="${escapeHtml(hero.imageAlt || home.bannerAlt || "店舖 Banner")}">
+          ${heroImage ? `<img class="home-hero__image" src="${escapeHtml(heroImage)}" alt="${escapeHtml(hero.imageAlt || "APOTHEKE 店舖")}">` : ""}
+          ${heroHasCopy ? `
+            <div class="home-hero__content">
+              ${hero.title ? `<h1>${escapeHtml(hero.title)}</h1>` : ""}
+              ${hero.subtitle ? `<p>${textToHtml(hero.subtitle)}</p>` : ""}
+              ${hero.buttonText && heroHref ? `<a class="home-hero__button" href="${escapeHtml(heroHref)}">${escapeHtml(hero.buttonText)}</a>` : ""}
+            </div>
+          ` : ""}
+        </section>
+      ` : ""}
       <section class="home-products" aria-labelledby="homeProductsTitle">
-        <h1 id="homeProductsTitle">${escapeHtml(home.productsTitle || "精選商品")}</h1>
-        <div class="product-grid home-products__grid" data-home-products-grid aria-label="首頁商品列表"></div>
+        <h1 id="homeProductsTitle">${escapeHtml(home.productsTitle || "熱門商品")}</h1>
+        <div class="product-grid home-products__grid" data-home-products-grid aria-label="首頁推薦商品"></div>
       </section>
     `;
-    renderProductGrid(featuredProducts, $("[data-home-products-grid]", container), "暫時沒有精選商品");
+    renderProductGrid(featuredProducts, $("[data-home-products-grid]", container), "暫時沒有推薦商品");
   }
 
-  function renderSiteFooter() {
-    if ($("[data-site-footer]") || !$(".site-header")) return;
+  async function loadHomeHeroContent() {
+    if (state.homeHeroLoadStarted || !document.querySelector("[data-home-page]")) return;
+    state.homeHeroLoadStarted = true;
+    try {
+      const firebase = await getFirebaseService();
+      const content = normalizeRemoteHomeHero(await firebase.getSiteContent("home"));
+      if (!content) return;
+      state.homeHero = content;
+      renderHomePage();
+    } catch (error) {
+      console.warn("Home hero content load failed; using site-config fallback.", error);
+    }
+  }
 
-    const contact = siteConfig.contact || {};
-    const logoText = $(".brand")?.textContent.trim() || "APOTHEKE";
-    const phone = String(contact.phone || "+852 0000 0000").trim();
+  function renderSiteFooterLegacy() {
+    if (!$(".site-header")) return;
+
+    const footerData = currentSiteFooter();
+    const existingFooter = $("[data-site-footer]");
+    if (!footerData.isActive) {
+      existingFooter?.remove();
+      return;
+    }
+
+    const logoText = String(footerData.logoText || "APOTHEKE").trim();
+    const description = String(footerData.description || "").trim();
+    const phone = String(footerData.phone || "").trim();
     const phoneHref = phone.replace(/[^+\d]/g, "");
-    const address = contact.address || "請在這裡填寫店舖地址";
+    const address = contact.address || "請在這裡填寫店鋪地址";
     const footer = document.createElement("footer");
     footer.className = "site-footer";
     footer.dataset.siteFooter = "";
     footer.innerHTML = `
       <div class="site-footer__inner">
-        <a class="site-footer__brand" href="${homeUrl()}" aria-label="${escapeHtml(logoText)} 返回首頁">${escapeHtml(logoText)}</a>
+        <a class="site-footer__brand" href="${homeUrl()}" aria-label="${escapeHtml(logoText)} 首頁">${escapeHtml(logoText)}</a>
         <div>
           <span class="site-footer__label">聯絡電話</span>
           ${phoneHref
@@ -2044,7 +2489,7 @@
             : `<span class="site-footer__value">${escapeHtml(phone)}</span>`}
         </div>
         <div>
-          <span class="site-footer__label">店舖地址</span>
+          <span class="site-footer__label">店鋪地址</span>
           <address>${textToHtml(address)}</address>
         </div>
       </div>
@@ -2053,6 +2498,76 @@
     const main = $("main");
     if (main) main.insertAdjacentElement("afterend", footer);
     else document.body.appendChild(footer);
+  }
+
+  function renderSiteFooter() {
+    if (!$(".site-header")) return;
+
+    const footerData = currentSiteFooter();
+    const existingFooter = $("[data-site-footer]");
+    if (!footerData.isActive) {
+      existingFooter?.remove();
+      return;
+    }
+
+    const logoText = String(footerData.logoText || "APOTHEKE").trim();
+    const description = String(footerData.description || "").trim();
+    const phone = String(footerData.phone || "").trim();
+    const phoneHref = phone.replace(/[^+\d]/g, "");
+    const email = String(footerData.email || "").trim();
+    const emailHref = email ? `mailto:${email}` : "";
+    const address = String(footerData.address || "").trim();
+    const copyright = String(footerData.copyright || "").trim();
+    const instagramUrl = resolveLinkUrl(footerData.instagramUrl);
+    const facebookUrl = resolveLinkUrl(footerData.facebookUrl);
+    const socialLinks = [
+      instagramUrl ? `<a class="site-footer__social-link" href="${escapeHtml(instagramUrl)}" target="_blank" rel="noopener noreferrer">Instagram</a>` : "",
+      facebookUrl ? `<a class="site-footer__social-link" href="${escapeHtml(facebookUrl)}" target="_blank" rel="noopener noreferrer">Facebook</a>` : ""
+    ].filter(Boolean).join("");
+    const footer = existingFooter || document.createElement("footer");
+    footer.className = "site-footer";
+    footer.dataset.siteFooter = "";
+    footer.innerHTML = `
+      <div class="site-footer__inner">
+        <div class="site-footer__brand-group">
+          <a class="site-footer__brand" href="${homeUrl()}" aria-label="${escapeHtml(logoText)} home">${escapeHtml(logoText)}</a>
+          ${description ? `<p class="site-footer__description">${textToHtml(description)}</p>` : ""}
+          ${socialLinks ? `<div class="site-footer__social">${socialLinks}</div>` : ""}
+        </div>
+        <div>
+          <span class="site-footer__label">Phone</span>
+          ${phoneHref
+            ? `<a class="site-footer__value" href="tel:${escapeHtml(phoneHref)}">${escapeHtml(phone)}</a>`
+            : `<span class="site-footer__value">${escapeHtml(phone)}</span>`}
+          ${email ? `<a class="site-footer__value site-footer__email" href="${escapeHtml(emailHref)}">${escapeHtml(email)}</a>` : ""}
+        </div>
+        <div>
+          <span class="site-footer__label">Address</span>
+          <address>${textToHtml(address)}</address>
+          ${copyright ? `<small class="site-footer__copyright">${escapeHtml(copyright)}</small>` : ""}
+        </div>
+      </div>
+    `;
+
+    if (!existingFooter) {
+      const main = $("main");
+      if (main) main.insertAdjacentElement("afterend", footer);
+      else document.body.appendChild(footer);
+    }
+  }
+
+  async function loadSiteFooterContent() {
+    if (state.siteFooterLoadStarted || !$("[data-site-footer]")) return;
+    state.siteFooterLoadStarted = true;
+    try {
+      const firebase = await getFirebaseService();
+      const content = normalizeRemoteSiteFooter(await firebase.getSiteContent("footer"));
+      if (!content) return;
+      state.siteFooter = content;
+      renderSiteFooter();
+    } catch (error) {
+      console.warn("Footer content load failed; using site-config fallback.", error);
+    }
   }
 
   function getNumericPrice(value) {
@@ -2665,15 +3180,20 @@
   renderFilterPanel();
   renderProductGrid();
   renderHomePage();
+  loadHomeHeroContent();
   renderProfilePage();
   renderCartPage();
   renderCheckoutPage();
   renderOrderConfirmationPage();
   renderProductDetail();
   renderAboutPage();
+  loadAboutContent();
   renderContactPage();
+  loadContactContent();
   renderPolicyPage();
+  loadPolicyContent();
   renderSiteFooter();
+  loadSiteFooterContent();
   window.localStorage.removeItem(LEGACY_USERS_KEY);
   window.localStorage.removeItem("onlineShopCurrentUser");
   updateAuthNav();

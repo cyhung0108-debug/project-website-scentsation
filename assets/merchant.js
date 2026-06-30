@@ -25,6 +25,38 @@
   let currentInviteLink = "";
   let activeDashboardSection = "products";
   let currentOrders = [];
+  let currentMerchantRoleLoaded = false;
+  let currentMerchantRoleLoading = false;
+  let currentMerchantRoleError = null;
+  let merchantRoleRequest = null;
+  let homeHeroDraft = null;
+  let homeHeroLoading = false;
+  let homeHeroSaving = false;
+  let homeHeroUploading = false;
+  let footerDraft = null;
+  let footerLoading = false;
+  let footerSaving = false;
+  let contactDraft = null;
+  let contactLoading = false;
+  let contactSaving = false;
+  let aboutDraft = null;
+  let aboutLoading = false;
+  let aboutSaving = false;
+  let policyDrafts = {};
+  let policyLoading = {};
+  let policySaving = {};
+  let activeSiteContentId = "home";
+  let siteContentPreviewMode = "desktop";
+  let activeHomeHeroFieldId = null;
+  let activeFooterFieldId = null;
+  let activeContactFieldId = null;
+  let activeAboutFieldId = null;
+  let activePolicyFieldId = null;
+  let suppressHomeHeroFocusActivation = false;
+  let suppressFooterFocusActivation = false;
+  let suppressContactFocusActivation = false;
+  let suppressAboutFocusActivation = false;
+  let suppressPolicyFocusActivation = false;
   const BACKOFFICE_ROLES = ["super_admin", "admin", "staff"];
   const ROLE_PERMISSION_ROLES = ["super_admin", "admin", "staff", "customer"];
   const ROLE_PERMISSION_FEATURES = [
@@ -54,6 +86,42 @@
   };
   let currentRolePermissions = defaultRolePermissions();
 
+  const HOME_HERO_FIELD_TO_PREVIEW_FIELD = {
+    "homeHero.imageAlt": "homeHero.imageUrl",
+    "homeHero.buttonHref": "homeHero.buttonText",
+    "homeHero.isActive": "homeHero"
+  };
+
+  const FOOTER_FIELD_TO_PREVIEW_FIELD = {
+    "footer.isActive": "footer"
+  };
+
+  const CONTACT_FIELD_TO_PREVIEW_FIELD = {
+    "contact.isActive": "contact"
+  };
+
+  const ABOUT_FIELD_TO_PREVIEW_FIELD = {
+    "about.imageAlt": "about.imageUrl",
+    "about.isActive": "about"
+  };
+
+  const POLICY_CONTENT_ITEMS = [
+    { key: "delivery", id: "policyDelivery", docId: "policyDelivery", label: "Delivery Policy" },
+    { key: "payment", id: "policyPayment", docId: "policyPayment", label: "Payment Policy" },
+    { key: "refund", id: "policyRefund", docId: "policyRefund", label: "Refund Policy" }
+  ];
+
+  const SITE_CONTENT_NAV_ITEMS = [
+    { id: "home", label: "Home Page", detail: "Hero banner" },
+    { id: "about", label: "About", detail: "Brand story" },
+    { id: "contact", label: "Contact", detail: "Contact details" },
+    { id: "policyDelivery", label: "Delivery Policy", detail: "Delivery page" },
+    { id: "policyPayment", label: "Payment Policy", detail: "Payment page" },
+    { id: "policyRefund", label: "Refund Policy", detail: "Refund page" },
+    { id: "footer", label: "Footer", detail: "Site footer" }
+  ];
+
+
   function escapeHtml(value) {
     return String(value ?? "")
       .replace(/&/g, "&amp;")
@@ -61,6 +129,10 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
+  }
+
+  function textToHtml(value) {
+    return escapeHtml(value).replace(/\r?\n/g, "<br>");
   }
 
   function uniqueStrings(values) {
@@ -424,7 +496,7 @@
       canReadSales() ? { id: "sales", label: "\u92b7\u552e\u7ba1\u7406" } : null,
       hasPermission("ordersRead") ? { id: "order-records", label: "訂單記錄" } : null,
       (canManageProducts() || hasPermission("categoriesManage")) ? { id: "products", label: "\u7522\u54c1\u7ba1\u7406" } : null,
-      canManagePages() ? { id: "site", label: "\u7db2\u9801\u7ba1\u7406" } : null,
+      canManagePages() ? { id: "site", label: "\u9801\u9762\u5167\u5bb9" } : null,
       canManagePermissions() ? { id: "permissions", label: "\u6b0a\u9650\u7ba1\u7406" } : null
     ].filter(Boolean);
     if (!sections.some((section) => section.id === activeDashboardSection)) {
@@ -432,7 +504,11 @@
     }
     const activeSection = activeDashboardSection;
     const navHtml = sections
-      .map((section) => `<button class="${section.id === activeSection ? "is-active" : ""}" type="button" data-merchant-section="${section.id}">${section.label}</button>`)
+      .map((section) => {
+        const button = `<button class="${section.id === activeSection ? "is-active" : ""}" type="button" data-merchant-section="${section.id}">${section.label}</button>`;
+        if (section.id !== "site") return button;
+        return `${button}<div class="merchant-dashboard__page-subnav" data-site-content-sidebar-nav>${renderSiteContentSubnav(activeSiteContentId)}</div>`;
+      })
       .join("");
     container.innerHTML = `
       <section class="merchant-dashboard">
@@ -505,10 +581,7 @@
             </div>
           </section>
           <section class="merchant-dashboard-section ${activeSection === "site" ? "is-active" : ""}" data-merchant-panel="site">
-            <h1>\u7db2\u9801\u7ba1\u7406</h1>
-            <div class="merchant-data-panel">
-              <p class="merchant-data-message">\u9019\u500b\u5340\u57df\u5c07\u7528\u65bc\u7ba1\u7406\u9996\u9801\u5167\u5bb9\u3001\u516c\u53f8\u8cc7\u6599\u548c\u7db2\u9801\u8a2d\u5b9a\u3002\u76ee\u524d\u5148\u4fdd\u7559\u57fa\u672c\u7248\u9762\u3002</p>
-            </div>
+            <div data-site-content-panel></div>
           </section>
           <section class="merchant-dashboard-section ${activeSection === "permissions" ? "is-active" : ""}" data-merchant-panel="permissions">
             <h1>權限管理</h1>
@@ -1331,6 +1404,1635 @@
       renderOrders([]);
     }
   }
+  function isAbsoluteOrRootUrl(value) {
+    return /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(String(value || "").trim());
+  }
+
+  function resolvePreviewUrl(value) {
+    const url = String(value || "").trim();
+    if (!url) return "";
+    return isAbsoluteOrRootUrl(url) ? url : `${rootPrefix()}${url}`;
+  }
+
+  function findDataAttribute(root, attribute, value) {
+    return Array.from(root.querySelectorAll(`[${attribute}]`))
+      .find((node) => node.getAttribute(attribute) === value) || null;
+  }
+
+  function previewFieldForHomeHeroField(fieldId) {
+    return HOME_HERO_FIELD_TO_PREVIEW_FIELD[fieldId] || fieldId;
+  }
+
+  function findHomeHeroPreviewTarget(fieldId) {
+    const previewRoot = findDataAttribute(document, "data-preview-id", "homeHero");
+    if (!previewRoot) return null;
+    const previewFieldId = previewFieldForHomeHeroField(fieldId);
+    if (previewFieldId === "homeHero") return previewRoot;
+    return findDataAttribute(previewRoot, "data-preview-field", previewFieldId);
+  }
+
+  function findHomeHeroEditorTarget(fieldId) {
+    const form = document.querySelector("[data-home-hero-form]");
+    if (!form) return null;
+    return findDataAttribute(form, "data-editor-field", fieldId);
+  }
+
+  function clearHomeHeroVisualSelection() {
+    document
+      .querySelectorAll('[data-preview-id="homeHero"].is-visual-edit-active, [data-preview-id="homeHero"] .is-visual-edit-active, [data-home-hero-form] .is-visual-edit-active')
+      .forEach((node) => node.classList.remove("is-visual-edit-active"));
+  }
+
+  function applyHomeHeroVisualSelection() {
+    clearHomeHeroVisualSelection();
+    if (!activeHomeHeroFieldId) return;
+    const previewTarget = findHomeHeroPreviewTarget(activeHomeHeroFieldId);
+    const editorTarget = findHomeHeroEditorTarget(activeHomeHeroFieldId);
+    if (previewTarget) previewTarget.classList.add("is-visual-edit-active");
+    if (editorTarget) editorTarget.classList.add("is-visual-edit-active");
+  }
+
+  function activateHomeHeroField(fieldId, source) {
+    if (!fieldId) return;
+    activeHomeHeroFieldId = fieldId;
+    applyHomeHeroVisualSelection();
+
+    const previewTarget = findHomeHeroPreviewTarget(fieldId);
+    const editorTarget = findHomeHeroEditorTarget(fieldId);
+
+    if (source === "editor" && previewTarget) {
+      previewTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    }
+
+    if (source === "preview" && editorTarget) {
+      editorTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      const focusTarget = editorTarget.matches("input, textarea, button")
+        ? editorTarget
+        : editorTarget.querySelector("input, textarea, button");
+      if (focusTarget) {
+        suppressHomeHeroFocusActivation = true;
+        focusTarget.focus({ preventScroll: true });
+        window.setTimeout(() => {
+          suppressHomeHeroFocusActivation = false;
+        }, 0);
+      }
+    }
+  }
+
+  function previewFieldForFooterField(fieldId) {
+    return FOOTER_FIELD_TO_PREVIEW_FIELD[fieldId] || fieldId;
+  }
+
+  function findFooterPreviewTarget(fieldId) {
+    const previewRoot = findDataAttribute(document, "data-preview-id", "footer");
+    if (!previewRoot) return null;
+    const previewFieldId = previewFieldForFooterField(fieldId);
+    if (previewFieldId === "footer") return previewRoot;
+    return findDataAttribute(previewRoot, "data-preview-field", previewFieldId);
+  }
+
+  function findFooterEditorTarget(fieldId) {
+    const form = document.querySelector("[data-footer-form]");
+    if (!form) return null;
+    return findDataAttribute(form, "data-editor-field", fieldId);
+  }
+
+  function clearFooterVisualSelection() {
+    document
+      .querySelectorAll('[data-preview-id="footer"].is-visual-edit-active, [data-preview-id="footer"] .is-visual-edit-active, [data-footer-form] .is-visual-edit-active')
+      .forEach((node) => node.classList.remove("is-visual-edit-active"));
+  }
+
+  function applyFooterVisualSelection() {
+    clearFooterVisualSelection();
+    if (!activeFooterFieldId) return;
+    const previewTarget = findFooterPreviewTarget(activeFooterFieldId);
+    const editorTarget = findFooterEditorTarget(activeFooterFieldId);
+    if (previewTarget) previewTarget.classList.add("is-visual-edit-active");
+    if (editorTarget) editorTarget.classList.add("is-visual-edit-active");
+  }
+
+  function activateFooterField(fieldId, source) {
+    if (!fieldId) return;
+    activeFooterFieldId = fieldId;
+    applyFooterVisualSelection();
+
+    const previewTarget = findFooterPreviewTarget(fieldId);
+    const editorTarget = findFooterEditorTarget(fieldId);
+
+    if (source === "editor" && previewTarget) {
+      previewTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    }
+
+    if (source === "preview" && editorTarget) {
+      editorTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      const focusTarget = editorTarget.matches("input, textarea, button")
+        ? editorTarget
+        : editorTarget.querySelector("input, textarea, button");
+      if (focusTarget) {
+        suppressFooterFocusActivation = true;
+        focusTarget.focus({ preventScroll: true });
+        window.setTimeout(() => {
+          suppressFooterFocusActivation = false;
+        }, 0);
+      }
+    }
+  }
+
+  function previewFieldForContactField(fieldId) {
+    return CONTACT_FIELD_TO_PREVIEW_FIELD[fieldId] || fieldId;
+  }
+
+  function findContactPreviewTarget(fieldId) {
+    const previewRoot = findDataAttribute(document, "data-preview-id", "contact");
+    if (!previewRoot) return null;
+    const previewFieldId = previewFieldForContactField(fieldId);
+    if (previewFieldId === "contact") return previewRoot;
+    return findDataAttribute(previewRoot, "data-preview-field", previewFieldId);
+  }
+
+  function findContactEditorTarget(fieldId) {
+    const form = document.querySelector("[data-contact-form]");
+    if (!form) return null;
+    return findDataAttribute(form, "data-editor-field", fieldId);
+  }
+
+  function clearContactVisualSelection() {
+    document
+      .querySelectorAll('[data-preview-id="contact"].is-visual-edit-active, [data-preview-id="contact"] .is-visual-edit-active, [data-contact-form] .is-visual-edit-active')
+      .forEach((node) => node.classList.remove("is-visual-edit-active"));
+  }
+
+  function applyContactVisualSelection() {
+    clearContactVisualSelection();
+    if (!activeContactFieldId) return;
+    const previewTarget = findContactPreviewTarget(activeContactFieldId);
+    const editorTarget = findContactEditorTarget(activeContactFieldId);
+    if (previewTarget) previewTarget.classList.add("is-visual-edit-active");
+    if (editorTarget) editorTarget.classList.add("is-visual-edit-active");
+  }
+
+  function activateContactField(fieldId, source) {
+    if (!fieldId) return;
+    activeContactFieldId = fieldId;
+    applyContactVisualSelection();
+
+    const previewTarget = findContactPreviewTarget(fieldId);
+    const editorTarget = findContactEditorTarget(fieldId);
+
+    if (source === "editor" && previewTarget) {
+      previewTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    }
+
+    if (source === "preview" && editorTarget) {
+      editorTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      const focusTarget = editorTarget.matches("input, textarea, button")
+        ? editorTarget
+        : editorTarget.querySelector("input, textarea, button");
+      if (focusTarget) {
+        suppressContactFocusActivation = true;
+        focusTarget.focus({ preventScroll: true });
+        window.setTimeout(() => {
+          suppressContactFocusActivation = false;
+        }, 0);
+      }
+    }
+  }
+
+  function previewFieldForAboutField(fieldId) {
+    return ABOUT_FIELD_TO_PREVIEW_FIELD[fieldId] || fieldId;
+  }
+
+  function findAboutPreviewTarget(fieldId) {
+    const previewRoot = findDataAttribute(document, "data-preview-id", "about");
+    if (!previewRoot) return null;
+    const previewFieldId = previewFieldForAboutField(fieldId);
+    if (previewFieldId === "about") return previewRoot;
+    return findDataAttribute(previewRoot, "data-preview-field", previewFieldId);
+  }
+
+  function findAboutEditorTarget(fieldId) {
+    const form = document.querySelector("[data-about-form]");
+    if (!form) return null;
+    return findDataAttribute(form, "data-editor-field", fieldId);
+  }
+
+  function clearAboutVisualSelection() {
+    document
+      .querySelectorAll('[data-preview-id="about"].is-visual-edit-active, [data-preview-id="about"] .is-visual-edit-active, [data-about-form] .is-visual-edit-active')
+      .forEach((node) => node.classList.remove("is-visual-edit-active"));
+  }
+
+  function applyAboutVisualSelection() {
+    clearAboutVisualSelection();
+    if (!activeAboutFieldId) return;
+    const previewTarget = findAboutPreviewTarget(activeAboutFieldId);
+    const editorTarget = findAboutEditorTarget(activeAboutFieldId);
+    if (previewTarget) previewTarget.classList.add("is-visual-edit-active");
+    if (editorTarget) editorTarget.classList.add("is-visual-edit-active");
+  }
+
+  function activateAboutField(fieldId, source) {
+    if (!fieldId) return;
+    activeAboutFieldId = fieldId;
+    applyAboutVisualSelection();
+
+    const previewTarget = findAboutPreviewTarget(fieldId);
+    const editorTarget = findAboutEditorTarget(fieldId);
+
+    if (source === "editor" && previewTarget) {
+      previewTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    }
+
+    if (source === "preview" && editorTarget) {
+      editorTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      const focusTarget = editorTarget.matches("input, textarea, button")
+        ? editorTarget
+        : editorTarget.querySelector("input, textarea, button");
+      if (focusTarget) {
+        suppressAboutFocusActivation = true;
+        focusTarget.focus({ preventScroll: true });
+        window.setTimeout(() => {
+          suppressAboutFocusActivation = false;
+        }, 0);
+      }
+    }
+  }
+
+  function policyItemById(policyId) {
+    return POLICY_CONTENT_ITEMS.find((item) => item.id === policyId) || null;
+  }
+
+  function policyIdFromField(fieldId) {
+    return String(fieldId || "").split(".")[0] || "";
+  }
+
+  function previewFieldForPolicyField(fieldId) {
+    return String(fieldId || "").endsWith(".isActive") ? policyIdFromField(fieldId) : fieldId;
+  }
+
+  function findPolicyPreviewTarget(fieldId) {
+    const policyId = policyIdFromField(fieldId);
+    const previewRoot = findDataAttribute(document, "data-preview-id", policyId);
+    if (!previewRoot) return null;
+    const previewFieldId = previewFieldForPolicyField(fieldId);
+    if (previewFieldId === policyId) return previewRoot;
+    return findDataAttribute(previewRoot, "data-preview-field", previewFieldId);
+  }
+
+  function findPolicyEditorTarget(fieldId) {
+    const form = document.querySelector(`[data-policy-form][data-policy-id="${policyIdFromField(fieldId)}"]`);
+    if (!form) return null;
+    return findDataAttribute(form, "data-editor-field", fieldId);
+  }
+
+  function clearPolicyVisualSelection() {
+    document
+      .querySelectorAll('[data-preview-id^="policy"].is-visual-edit-active, [data-preview-id^="policy"] .is-visual-edit-active, [data-policy-form] .is-visual-edit-active')
+      .forEach((node) => node.classList.remove("is-visual-edit-active"));
+  }
+
+  function applyPolicyVisualSelection() {
+    clearPolicyVisualSelection();
+    if (!activePolicyFieldId) return;
+    const previewTarget = findPolicyPreviewTarget(activePolicyFieldId);
+    const editorTarget = findPolicyEditorTarget(activePolicyFieldId);
+    if (previewTarget) previewTarget.classList.add("is-visual-edit-active");
+    if (editorTarget) editorTarget.classList.add("is-visual-edit-active");
+  }
+
+  function activatePolicyField(fieldId, source) {
+    if (!fieldId) return;
+    activePolicyFieldId = fieldId;
+    applyPolicyVisualSelection();
+
+    const previewTarget = findPolicyPreviewTarget(fieldId);
+    const editorTarget = findPolicyEditorTarget(fieldId);
+
+    if (source === "editor" && previewTarget) {
+      previewTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    }
+
+    if (source === "preview" && editorTarget) {
+      editorTarget.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      const focusTarget = editorTarget.matches("input, textarea, button")
+        ? editorTarget
+        : editorTarget.querySelector("input, textarea, button");
+      if (focusTarget) {
+        suppressPolicyFocusActivation = true;
+        focusTarget.focus({ preventScroll: true });
+        window.setTimeout(() => {
+          suppressPolicyFocusActivation = false;
+        }, 0);
+      }
+    }
+  }
+
+  function fallbackHomeHero() {
+    const home = window.ONLINE_SHOP_SITE_CONFIG?.home || {};
+    return {
+      type: "homeHero",
+      title: String(home.heroTitle || ""),
+      subtitle: String(home.heroSubtitle || ""),
+      imageUrl: String(home.bannerImage || "assets/images/banner.jpg"),
+      imagePath: "",
+      imageAlt: String(home.heroImageAlt || home.bannerAlt || "APOTHEKE"),
+      buttonText: String(home.heroButtonText || ""),
+      buttonHref: String(home.heroButtonHref || ""),
+      isActive: home.heroIsActive !== false
+    };
+  }
+
+  function normalizeHomeHero(data) {
+    const fallback = fallbackHomeHero();
+    if (!data || data.type !== "homeHero") return fallback;
+    return {
+      type: "homeHero",
+      title: String(data.title ?? fallback.title),
+      subtitle: String(data.subtitle ?? fallback.subtitle),
+      imageUrl: String(data.imageUrl ?? fallback.imageUrl),
+      imagePath: String(data.imagePath ?? ""),
+      imageAlt: String(data.imageAlt ?? fallback.imageAlt),
+      buttonText: String(data.buttonText ?? fallback.buttonText),
+      buttonHref: String(data.buttonHref ?? fallback.buttonHref),
+      isActive: typeof data.isActive === "boolean" ? data.isActive : fallback.isActive
+    };
+  }
+
+  function fallbackFooterContent() {
+    const config = window.ONLINE_SHOP_SITE_CONFIG || {};
+    const footer = config.footer || {};
+    const contact = config.contact || {};
+    const logoText = String(footer.logoText || document.querySelector(".brand")?.textContent.trim() || "APOTHEKE");
+    return {
+      type: "footer",
+      logoText,
+      description: String(footer.description || ""),
+      phone: String(footer.phone || contact.phone || "+852 0000 0000"),
+      email: String(footer.email || contact.email || ""),
+      address: String(footer.address || contact.address || ""),
+      copyright: String(footer.copyright || `© ${new Date().getFullYear()} ${logoText}. All rights reserved.`),
+      instagramUrl: String(footer.instagramUrl || ""),
+      facebookUrl: String(footer.facebookUrl || ""),
+      isActive: footer.isActive !== false
+    };
+  }
+
+  function normalizeFooterContent(data) {
+    const fallback = fallbackFooterContent();
+    if (!data || data.type !== "footer") return fallback;
+    return {
+      type: "footer",
+      logoText: String(data.logoText ?? fallback.logoText),
+      description: String(data.description ?? fallback.description),
+      phone: String(data.phone ?? fallback.phone),
+      email: String(data.email ?? fallback.email),
+      address: String(data.address ?? fallback.address),
+      copyright: String(data.copyright ?? fallback.copyright),
+      instagramUrl: String(data.instagramUrl ?? fallback.instagramUrl),
+      facebookUrl: String(data.facebookUrl ?? fallback.facebookUrl),
+      isActive: typeof data.isActive === "boolean" ? data.isActive : fallback.isActive
+    };
+  }
+
+  function fallbackContactContent() {
+    const contact = window.ONLINE_SHOP_SITE_CONFIG?.contact || {};
+    return {
+      type: "contact",
+      title: String(contact.title || "聯絡我們"),
+      subtitle: String(contact.subtitle || ""),
+      address: String(contact.address || "請在這裡填寫店鋪地址"),
+      phone: String(contact.phone || "+852 0000 0000"),
+      email: String(contact.email || ""),
+      openingHours: String(contact.openingHours || "星期一至日 11:00 - 20:00"),
+      googleMapEmbedUrl: String(contact.googleMapEmbedUrl || ""),
+      other: String(contact.other || "請在這裡填寫其他聯絡資料。"),
+      isActive: contact.isActive !== false
+    };
+  }
+
+  function normalizeContactContent(data) {
+    const fallback = fallbackContactContent();
+    if (!data || data.type !== "contact") return fallback;
+    return {
+      type: "contact",
+      title: String(data.title ?? fallback.title),
+      subtitle: String(data.subtitle ?? fallback.subtitle),
+      address: String(data.address ?? fallback.address),
+      phone: String(data.phone ?? fallback.phone),
+      email: String(data.email ?? fallback.email),
+      openingHours: String(data.openingHours ?? fallback.openingHours),
+      googleMapEmbedUrl: String(data.googleMapEmbedUrl ?? fallback.googleMapEmbedUrl),
+      other: String(data.other ?? fallback.other),
+      isActive: typeof data.isActive === "boolean" ? data.isActive : fallback.isActive
+    };
+  }
+
+  function fallbackAboutContent() {
+    const about = window.ONLINE_SHOP_SITE_CONFIG?.about || {};
+    const firstSection = Array.isArray(about.sections) ? about.sections[0] || {} : {};
+    return {
+      type: "about",
+      title: String(about.title || "關於我們"),
+      subtitle: String(about.subtitle || about.companyName || ""),
+      intro: String(about.intro || "請在 assets/site-config.js 填寫公司簡介。"),
+      sectionTitle: String(about.sectionTitle || firstSection.heading || ""),
+      sectionContent: String(about.sectionContent || firstSection.content || ""),
+      imageUrl: String(about.imageUrl || ""),
+      imageAlt: String(about.imageAlt || about.title || "About"),
+      isActive: about.isActive !== false
+    };
+  }
+
+  function normalizeAboutContent(data) {
+    const fallback = fallbackAboutContent();
+    if (!data || data.type !== "about") return fallback;
+    return {
+      type: "about",
+      title: String(data.title ?? fallback.title),
+      subtitle: String(data.subtitle ?? fallback.subtitle),
+      intro: String(data.intro ?? fallback.intro),
+      sectionTitle: String(data.sectionTitle ?? fallback.sectionTitle),
+      sectionContent: String(data.sectionContent ?? fallback.sectionContent),
+      imageUrl: String(data.imageUrl ?? fallback.imageUrl),
+      imageAlt: String(data.imageAlt ?? fallback.imageAlt),
+      isActive: typeof data.isActive === "boolean" ? data.isActive : fallback.isActive
+    };
+  }
+
+  function fallbackPolicyContent(item) {
+    const policy = window.ONLINE_SHOP_SITE_CONFIG?.policies?.[item.key] || {};
+    return {
+      type: "policy",
+      policyKey: item.key,
+      title: String(policy.title || item.label),
+      content: String(policy.content || ""),
+      isActive: policy.isActive !== false
+    };
+  }
+
+  function normalizePolicyContent(item, data) {
+    const fallback = fallbackPolicyContent(item);
+    if (!data || data.type !== "policy" || data.policyKey !== item.key) return fallback;
+    return {
+      type: "policy",
+      policyKey: item.key,
+      title: String(data.title ?? fallback.title),
+      content: String(data.content ?? fallback.content),
+      isActive: typeof data.isActive === "boolean" ? data.isActive : fallback.isActive
+    };
+  }
+
+  function hasRolePagesWrite(roleData = currentMerchantRole) {
+    const permissions = roleData?.permissions || {};
+    const role = String(roleData?.role || roleData?.roleName || "").trim();
+    const pagesWrite = permissions.pagesWrite === true || roleData?.pagesWrite === true;
+    return roleData?.active === true
+      && ["merchant", "admin", "super_admin"].includes(role)
+      && pagesWrite;
+  }
+
+  function pageContentPermissionMessage() {
+    if (currentMerchantRoleLoading || !currentMerchantRoleLoaded) return "Checking page content permissions...";
+    if (currentMerchantRoleError) return "你目前沒有權限執行這個操作。";
+    if (!hasRolePagesWrite()) return "pagesWrite permission is not enabled for this account.";
+    return "";
+  }
+
+  function canEditPageContent() {
+    if (!currentMerchant || !isAllowedMerchant(currentMerchant)) return false;
+    if (currentMerchantRoleLoading || !currentMerchantRoleLoaded) return false;
+    return hasRolePagesWrite();
+  }
+
+  function setMerchantSectionActive(section) {
+    document.querySelectorAll("[data-merchant-section]").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.merchantSection === section);
+    });
+    document.querySelectorAll("[data-merchant-panel]").forEach((panel) => {
+      panel.classList.toggle("is-active", panel.dataset.merchantPanel === section);
+    });
+  }
+
+  function updateSiteContentSidebarNav() {
+    document.querySelectorAll("[data-site-content-nav]").forEach((button) => {
+      button.classList.toggle("is-active", button.getAttribute("data-site-content-nav") === activeSiteContentId);
+    });
+  }
+
+  function setSiteContentMessage(message, type = "info", contentId = "homeHero") {
+    const node = document.querySelector(`[data-site-content-message="${contentId}"]`)
+      || (contentId === "homeHero" ? document.querySelector("[data-site-content-message]") : null);
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.type = type;
+  }
+
+  function syncHomeHeroDraftFromForm(form = document.querySelector("[data-home-hero-form]")) {
+    if (!form) return homeHeroDraft || fallbackHomeHero();
+    const data = new FormData(form);
+    homeHeroDraft = {
+      ...(homeHeroDraft || fallbackHomeHero()),
+      type: "homeHero",
+      title: String(data.get("title") || "").trim(),
+      subtitle: String(data.get("subtitle") || "").trim(),
+      imageAlt: String(data.get("imageAlt") || "").trim(),
+      buttonText: String(data.get("buttonText") || "").trim(),
+      buttonHref: String(data.get("buttonHref") || "").trim(),
+      isActive: data.get("isActive") === "on"
+    };
+    return homeHeroDraft;
+  }
+
+  function syncFooterDraftFromForm(form = document.querySelector("[data-footer-form]")) {
+    if (!form) return footerDraft || fallbackFooterContent();
+    const data = new FormData(form);
+    footerDraft = {
+      ...(footerDraft || fallbackFooterContent()),
+      type: "footer",
+      logoText: String(data.get("logoText") || "").trim(),
+      description: String(data.get("description") || "").trim(),
+      phone: String(data.get("phone") || "").trim(),
+      email: String(data.get("email") || "").trim(),
+      address: String(data.get("address") || "").trim(),
+      copyright: String(data.get("copyright") || "").trim(),
+      instagramUrl: String(data.get("instagramUrl") || "").trim(),
+      facebookUrl: String(data.get("facebookUrl") || "").trim(),
+      isActive: data.get("isActive") === "on"
+    };
+    return footerDraft;
+  }
+
+  function syncContactDraftFromForm(form = document.querySelector("[data-contact-form]")) {
+    if (!form) return contactDraft || fallbackContactContent();
+    const data = new FormData(form);
+    contactDraft = {
+      ...(contactDraft || fallbackContactContent()),
+      type: "contact",
+      title: String(data.get("title") || "").trim(),
+      subtitle: String(data.get("subtitle") || "").trim(),
+      address: String(data.get("address") || "").trim(),
+      phone: String(data.get("phone") || "").trim(),
+      email: String(data.get("email") || "").trim(),
+      openingHours: String(data.get("openingHours") || "").trim(),
+      googleMapEmbedUrl: String(data.get("googleMapEmbedUrl") || "").trim(),
+      other: String(data.get("other") || "").trim(),
+      isActive: data.get("isActive") === "on"
+    };
+    return contactDraft;
+  }
+
+  function syncAboutDraftFromForm(form = document.querySelector("[data-about-form]")) {
+    if (!form) return aboutDraft || fallbackAboutContent();
+    const data = new FormData(form);
+    aboutDraft = {
+      ...(aboutDraft || fallbackAboutContent()),
+      type: "about",
+      title: String(data.get("title") || "").trim(),
+      subtitle: String(data.get("subtitle") || "").trim(),
+      intro: String(data.get("intro") || "").trim(),
+      sectionTitle: String(data.get("sectionTitle") || "").trim(),
+      sectionContent: String(data.get("sectionContent") || "").trim(),
+      imageUrl: String(data.get("imageUrl") || "").trim(),
+      imageAlt: String(data.get("imageAlt") || "").trim(),
+      isActive: data.get("isActive") === "on"
+    };
+    return aboutDraft;
+  }
+
+  function syncPolicyDraftFromForm(form) {
+    const item = policyItemById(form?.dataset?.policyId || "");
+    if (!item) return null;
+    const data = new FormData(form);
+    const draft = {
+      ...(policyDrafts[item.id] || fallbackPolicyContent(item)),
+      type: "policy",
+      policyKey: item.key,
+      title: String(data.get("title") || "").trim(),
+      content: String(data.get("content") || "").trim(),
+      isActive: data.get("isActive") === "on"
+    };
+    policyDrafts = {
+      ...policyDrafts,
+      [item.id]: draft
+    };
+    return draft;
+  }
+
+  function syncVisibleSiteContentDrafts() {
+    if (document.querySelector("[data-home-hero-form]")) syncHomeHeroDraftFromForm();
+    if (document.querySelector("[data-footer-form]")) syncFooterDraftFromForm();
+    if (document.querySelector("[data-contact-form]")) syncContactDraftFromForm();
+    if (document.querySelector("[data-about-form]")) syncAboutDraftFromForm();
+    document.querySelectorAll("[data-policy-form]").forEach((form) => syncPolicyDraftFromForm(form));
+  }
+
+  function clearSiteContentVisualSelectionState() {
+    activeHomeHeroFieldId = null;
+    activeFooterFieldId = null;
+    activeContactFieldId = null;
+    activeAboutFieldId = null;
+    activePolicyFieldId = null;
+  }
+
+  function siteContentNavItem(contentId = activeSiteContentId) {
+    return SITE_CONTENT_NAV_ITEMS.find((item) => item.id === contentId) || SITE_CONTENT_NAV_ITEMS[0];
+  }
+
+  function renderSiteContentSubnav(activeId) {
+    return SITE_CONTENT_NAV_ITEMS.map((item) => `
+      <button class="${item.id === activeId ? "is-active" : ""}" type="button" data-site-content-nav="${escapeHtml(item.id)}">
+        <span>${escapeHtml(item.label)}</span>
+        <small>${escapeHtml(item.detail)}</small>
+      </button>
+    `).join("");
+  }
+
+  function renderSiteContentViewportControls() {
+    return ["desktop", "tablet", "mobile"].map((mode) => `
+      <button class="${siteContentPreviewMode === mode ? "is-active" : ""}" type="button" data-site-content-preview-mode="${mode}">
+        ${escapeHtml(mode[0].toUpperCase() + mode.slice(1))}
+      </button>
+    `).join("");
+  }
+
+  function renderPreviewHeader(activeId) {
+    const activeClass = (id) => id === activeId ? " is-active" : "";
+    return `
+      <div class="announcement merchant-site-content__preview-announcement">Free shipping on eligible orders</div>
+      <header class="site-header merchant-site-content__site-header">
+        <button class="mobile-menu-button" type="button" aria-label="Menu"><span></span><span></span></button>
+        <a class="brand" href="#">APOTHEKE</a>
+        <nav class="desktop-nav" aria-label="Preview navigation">
+          <a class="nav-link${activeClass("home")}" href="#">Home</a>
+          <a class="nav-link" href="#">Products</a>
+          <a class="nav-link${activeClass("about")}" href="#">About</a>
+          <a class="nav-link${activeClass("contact")}" href="#">Contact</a>
+          <a class="nav-link${activeClass("policy")}" href="#">Policy</a>
+        </nav>
+        <div class="header-actions">
+          <a class="account-link" href="#">Account</a>
+          <button class="icon-button search-button" type="button" aria-label="Search"></button>
+          <button class="cart-button" type="button" aria-label="Cart"><span class="cart-shape"><span class="cart-count">0</span></span></button>
+        </div>
+      </header>
+    `;
+  }
+
+  function renderPreviewFooter(footer, withFields = false) {
+    if (!footer.isActive) return "";
+    const logoText = String(footer.logoText || "APOTHEKE").trim();
+    const description = String(footer.description || "").trim();
+    const phone = String(footer.phone || "").trim();
+    const phoneHref = phone.replace(/[^+\d]/g, "");
+    const email = String(footer.email || "").trim();
+    const address = String(footer.address || "").trim();
+    const copyright = String(footer.copyright || "").trim();
+    const instagramUrl = resolvePreviewUrl(footer.instagramUrl);
+    const facebookUrl = resolvePreviewUrl(footer.facebookUrl);
+    const fieldAttr = (field) => withFields ? ` data-preview-field="footer.${field}"` : "";
+    const socialLinks = [
+      instagramUrl ? `<a class="site-footer__social-link" href="${escapeHtml(instagramUrl)}"${fieldAttr("instagramUrl")}>Instagram</a>` : "",
+      facebookUrl ? `<a class="site-footer__social-link" href="${escapeHtml(facebookUrl)}"${fieldAttr("facebookUrl")}>Facebook</a>` : ""
+    ].filter(Boolean).join("");
+
+    return `
+      <footer class="site-footer" data-site-footer>
+        <div class="site-footer__inner">
+          <div class="site-footer__brand-group">
+            <a class="site-footer__brand" href="#"${fieldAttr("logoText")}>${escapeHtml(logoText)}</a>
+            ${description ? `<p class="site-footer__description"${fieldAttr("description")}>${textToHtml(description)}</p>` : ""}
+            ${socialLinks ? `<div class="site-footer__social">${socialLinks}</div>` : ""}
+          </div>
+          <div>
+            <span class="site-footer__label">Phone</span>
+            ${phoneHref
+              ? `<a class="site-footer__value" href="tel:${escapeHtml(phoneHref)}"${fieldAttr("phone")}>${escapeHtml(phone)}</a>`
+              : `<span class="site-footer__value"${fieldAttr("phone")}>${escapeHtml(phone)}</span>`}
+            ${email ? `<a class="site-footer__value site-footer__email" href="mailto:${escapeHtml(email)}"${fieldAttr("email")}>${escapeHtml(email)}</a>` : ""}
+          </div>
+          <div>
+            <span class="site-footer__label">Address</span>
+            <address${fieldAttr("address")}>${textToHtml(address)}</address>
+            ${copyright ? `<small class="site-footer__copyright"${fieldAttr("copyright")}>${escapeHtml(copyright)}</small>` : ""}
+          </div>
+        </div>
+      </footer>
+    `;
+  }
+
+  function renderPreviewPage(previewId, activePageId, bodyHtml, footer, footerFields = false) {
+    const isPolicyPreview = String(previewId || "").startsWith("policy");
+    return `
+      <div class="merchant-site-content__preview-frame merchant-site-content__preview-page${isPolicyPreview ? " merchant-site-content__preview-page--policy" : ""}" data-site-content-preview data-preview-id="${escapeHtml(previewId)}">
+        ${renderPreviewHeader(activePageId)}
+        <main>${bodyHtml}</main>
+        ${renderPreviewFooter(footer, footerFields)}
+      </div>
+    `;
+  }
+
+  function renderPolicyContentSection(item, canEdit, permissionMessage) {
+    const policy = policyDrafts[item.id] || fallbackPolicyContent(item);
+    const controlsDisabled = !canEdit || policyLoading[item.id] || policySaving[item.id];
+    const saveText = policySaving[item.id] ? "Saving..." : `Save ${item.label}`;
+    return `
+      <h2 class="merchant-site-content__section-title">${escapeHtml(item.label)}</h2>
+      <section class="merchant-products-panel merchant-site-content__panel">
+        <div class="merchant-site-content__preview-frame merchant-site-content__preview-frame--policy" data-site-content-preview data-preview-id="${escapeHtml(item.id)}">
+          <div class="merchant-site-content__policy-preview">
+            <strong data-preview-field="${escapeHtml(item.id)}.title">${escapeHtml(policy.title)}</strong>
+            <div data-preview-field="${escapeHtml(item.id)}.content">${textToHtml(policy.content)}</div>
+            <span class="merchant-site-content__status" data-preview-field="${escapeHtml(item.id)}.isActive">${policy.isActive ? "Visible" : "Hidden"}</span>
+          </div>
+        </div>
+        <form class="merchant-form merchant-site-content__form" data-policy-form data-policy-id="${escapeHtml(item.id)}">
+          <fieldset ${controlsDisabled ? "disabled" : ""}>
+            <label data-editor-field="${escapeHtml(item.id)}.title">Title
+              <input name="title" type="text" maxlength="120" value="${escapeHtml(policy.title)}">
+            </label>
+            <label data-editor-field="${escapeHtml(item.id)}.content">Content
+              <textarea name="content" rows="7" maxlength="4000">${escapeHtml(policy.content)}</textarea>
+            </label>
+            <label class="merchant-checkbox" data-editor-field="${escapeHtml(item.id)}.isActive">
+              <input name="isActive" type="checkbox" ${policy.isActive ? "checked" : ""}>
+              <span>Show ${escapeHtml(item.label)}</span>
+            </label>
+          </fieldset>
+          <p class="merchant-message" data-site-content-message="${escapeHtml(item.id)}" aria-live="polite"></p>
+          <div class="merchant-modal__actions">
+            <button class="merchant-primary-button" type="submit" ${controlsDisabled ? "disabled" : ""}>${escapeHtml(saveText)}</button>
+          </div>
+          ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
+        </form>
+      </section>
+    `;
+  }
+
+  function renderSiteContentPanel() {
+    const panel = document.querySelector("[data-site-content-panel]");
+    if (!panel) return;
+    const hero = homeHeroDraft || fallbackHomeHero();
+    const imageUrl = resolvePreviewUrl(hero.imageUrl);
+    const buttonHref = hero.buttonHref ? resolvePreviewUrl(hero.buttonHref) : "#";
+    const canEdit = canEditPageContent();
+    const permissionMessage = pageContentPermissionMessage();
+    const controlsDisabled = !canEdit || homeHeroLoading || homeHeroSaving || homeHeroUploading;
+    const saveText = homeHeroSaving ? "Saving..." : "Save Home Hero";
+    const uploadText = homeHeroUploading ? "Uploading image..." : "Hero image";
+    const footer = footerDraft || fallbackFooterContent();
+    const footerControlsDisabled = !canEdit || footerLoading || footerSaving;
+    const footerSaveText = footerSaving ? "Saving..." : "Save Footer";
+    const footerPhoneHref = String(footer.phone || "").replace(/[^+\d]/g, "");
+    const footerEmail = String(footer.email || "").trim();
+    const footerInstagramUrl = resolvePreviewUrl(footer.instagramUrl);
+    const footerFacebookUrl = resolvePreviewUrl(footer.facebookUrl);
+    const contact = contactDraft || fallbackContactContent();
+    const contactControlsDisabled = !canEdit || contactLoading || contactSaving;
+    const contactSaveText = contactSaving ? "Saving..." : "Save Contact";
+    const contactPhoneHref = String(contact.phone || "").replace(/[^+\d]/g, "");
+    const contactEmail = String(contact.email || "").trim();
+    const contactMapUrl = resolvePreviewUrl(contact.googleMapEmbedUrl);
+    const about = aboutDraft || fallbackAboutContent();
+    const aboutControlsDisabled = !canEdit || aboutLoading || aboutSaving;
+    const aboutSaveText = aboutSaving ? "Saving..." : "Save About";
+    const aboutImageUrl = resolvePreviewUrl(about.imageUrl);
+    const homePreviewBody = `
+      ${hero.isActive ? `
+        <section class="home-banner home-hero" aria-label="${escapeHtml(hero.imageAlt || "Home Hero")}">
+          ${imageUrl ? `<img class="home-hero__image" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(hero.imageAlt)}" data-preview-field="homeHero.imageUrl">` : `<span data-preview-field="homeHero.imageUrl">No image</span>`}
+          <div class="home-hero__content">
+            ${hero.title ? `<h1 data-preview-field="homeHero.title">${escapeHtml(hero.title)}</h1>` : ""}
+            ${hero.subtitle ? `<p data-preview-field="homeHero.subtitle">${textToHtml(hero.subtitle)}</p>` : ""}
+            ${hero.buttonText ? `<a class="home-hero__button" href="${escapeHtml(buttonHref || "#")}" data-preview-field="homeHero.buttonText">${escapeHtml(hero.buttonText)}</a>` : ""}
+          </div>
+        </section>
+      ` : ""}
+      <section class="home-products merchant-site-content__preview-products" aria-label="Featured products">
+        <h1>Featured Products</h1>
+        <div class="product-grid home-products__grid">
+          <article class="merchant-site-content__product-placeholder"></article>
+          <article class="merchant-site-content__product-placeholder"></article>
+          <article class="merchant-site-content__product-placeholder"></article>
+          <article class="merchant-site-content__product-placeholder"></article>
+        </div>
+      </section>
+    `;
+    const aboutPreviewBody = `
+      <section class="info-page about-page">
+        <div class="about-page__layout">
+          <div class="about-page__content">
+            <h1 data-preview-field="about.title">${escapeHtml(about.title || "About")}</h1>
+            ${about.subtitle ? `<h2 data-preview-field="about.subtitle">${escapeHtml(about.subtitle)}</h2>` : `<h2 data-preview-field="about.subtitle">Subtitle</h2>`}
+            ${about.intro ? `<p class="info-intro" data-preview-field="about.intro">${textToHtml(about.intro)}</p>` : `<p class="info-intro" data-preview-field="about.intro">Intro</p>`}
+            <div class="info-sections">
+              <article>
+                ${about.sectionTitle ? `<h3 data-preview-field="about.sectionTitle">${escapeHtml(about.sectionTitle)}</h3>` : `<h3 data-preview-field="about.sectionTitle">Section title</h3>`}
+                ${about.sectionContent ? `<p data-preview-field="about.sectionContent">${textToHtml(about.sectionContent)}</p>` : `<p data-preview-field="about.sectionContent">Section content</p>`}
+              </article>
+            </div>
+            <span class="merchant-site-content__status" data-preview-field="about.isActive">${about.isActive ? "Visible" : "Hidden"}</span>
+          </div>
+          <figure class="about-page__image" data-preview-field="about.imageUrl">
+            ${aboutImageUrl ? `<img src="${escapeHtml(aboutImageUrl)}" alt="${escapeHtml(about.imageAlt || about.title || "About")}">` : `<span>No image URL</span>`}
+          </figure>
+        </div>
+      </section>
+    `;
+    const contactPreviewBody = `
+      <section class="info-page contact-page">
+        <h1 data-preview-field="contact.title">${escapeHtml(contact.title || "Contact")}</h1>
+        ${contact.subtitle ? `<p class="info-intro" data-preview-field="contact.subtitle">${textToHtml(contact.subtitle)}</p>` : `<p class="info-intro" data-preview-field="contact.subtitle">Subtitle</p>`}
+        <div class="contact-layout">
+          <div class="contact-details">
+            <article data-preview-field="contact.address">
+              <h2>Address</h2>
+              <p>${textToHtml(contact.address)}</p>
+            </article>
+            <article data-preview-field="contact.openingHours">
+              <h2>Opening Hours</h2>
+              <p>${textToHtml(contact.openingHours)}</p>
+            </article>
+            <article data-preview-field="contact.phone">
+              <h2>Phone</h2>
+              <p>${contactPhoneHref ? `<a href="tel:${escapeHtml(contactPhoneHref)}">${escapeHtml(contact.phone)}</a>` : escapeHtml(contact.phone)}</p>
+            </article>
+            <article data-preview-field="contact.email">
+              <h2>Email</h2>
+              <p>${contactEmail ? `<a href="mailto:${escapeHtml(contactEmail)}">${escapeHtml(contactEmail)}</a>` : "Email"}</p>
+            </article>
+            <article data-preview-field="contact.other">
+              <h2>Other</h2>
+              <p>${textToHtml(contact.other)}</p>
+            </article>
+          </div>
+          <div class="map-panel" data-preview-field="contact.googleMapEmbedUrl">
+            ${contactMapUrl
+              ? `<iframe src="${escapeHtml(contactMapUrl)}" loading="lazy" allowfullscreen referrerpolicy="no-referrer-when-downgrade" title="Google Map"></iframe>`
+              : `<div class="map-placeholder">Google Map has not been configured.</div>`}
+          </div>
+        </div>
+        <span class="merchant-site-content__status" data-preview-field="contact.isActive">${contact.isActive ? "Visible" : "Hidden"}</span>
+      </section>
+    `;
+    const footerPreviewBody = `
+      <section class="info-page merchant-site-content__footer-page">
+        <h1>Footer</h1>
+        <p class="info-intro">Footer appears at the bottom of the storefront pages.</p>
+      </section>
+    `;
+    const modules = {
+      home: {
+        id: "home",
+        label: "Home Page",
+        detail: "Hero banner",
+        messageId: "homeHero",
+        openHref: `${rootPrefix()}index.html`,
+        previewHtml: renderPreviewPage("homeHero", "home", homePreviewBody, footer),
+        editorHtml: `
+          <form class="merchant-form merchant-site-content__form" data-home-hero-form>
+            <fieldset ${controlsDisabled ? "disabled" : ""}>
+              <div class="merchant-form__row">
+                <label data-editor-field="homeHero.title">Title
+                  <input name="title" type="text" maxlength="120" value="${escapeHtml(hero.title)}">
+                </label>
+                <label data-editor-field="homeHero.buttonText">Button text
+                  <input name="buttonText" type="text" maxlength="60" value="${escapeHtml(hero.buttonText)}">
+                </label>
+              </div>
+              <label data-editor-field="homeHero.subtitle">Subtitle
+                <textarea name="subtitle" rows="3" maxlength="280">${escapeHtml(hero.subtitle)}</textarea>
+              </label>
+              <div class="merchant-form__row">
+                <label data-editor-field="homeHero.buttonHref">Button link
+                  <input name="buttonHref" type="text" maxlength="500" value="${escapeHtml(hero.buttonHref)}">
+                </label>
+                <label data-editor-field="homeHero.imageAlt">Image alt text
+                  <input name="imageAlt" type="text" maxlength="160" value="${escapeHtml(hero.imageAlt)}">
+                </label>
+              </div>
+              <label data-editor-field="homeHero.imageUrl">${uploadText}
+                <input type="file" accept="image/*" data-site-content-image-upload>
+              </label>
+              <label class="merchant-checkbox" data-editor-field="homeHero.isActive">
+                <input name="isActive" type="checkbox" ${hero.isActive ? "checked" : ""}>
+                <span>Show Home Hero</span>
+              </label>
+            </fieldset>
+            <div class="merchant-site-content__meta">
+              <span>${escapeHtml(hero.imagePath || "site-content/home/")}</span>
+            </div>
+            <p class="merchant-message" data-site-content-message="homeHero" aria-live="polite"></p>
+            <div class="merchant-modal__actions">
+              <button class="merchant-primary-button" type="submit" data-save-home-hero ${controlsDisabled ? "disabled" : ""}>${saveText}</button>
+            </div>
+            ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
+          </form>
+        `
+      },
+      about: {
+        id: "about",
+        label: "About",
+        detail: "Brand story",
+        messageId: "about",
+        openHref: `${rootPrefix()}about.html`,
+        previewHtml: renderPreviewPage("about", "about", aboutPreviewBody, footer),
+        editorHtml: `
+          <form class="merchant-form merchant-site-content__form" data-about-form>
+            <fieldset ${aboutControlsDisabled ? "disabled" : ""}>
+              <div class="merchant-form__row">
+                <label data-editor-field="about.title">Title
+                  <input name="title" type="text" maxlength="120" value="${escapeHtml(about.title)}">
+                </label>
+                <label data-editor-field="about.subtitle">Subtitle
+                  <input name="subtitle" type="text" maxlength="160" value="${escapeHtml(about.subtitle)}">
+                </label>
+              </div>
+              <label data-editor-field="about.intro">Intro
+                <textarea name="intro" rows="4" maxlength="600">${escapeHtml(about.intro)}</textarea>
+              </label>
+              <div class="merchant-form__row">
+                <label data-editor-field="about.sectionTitle">Section title
+                  <input name="sectionTitle" type="text" maxlength="120" value="${escapeHtml(about.sectionTitle)}">
+                </label>
+                <label data-editor-field="about.imageAlt">Image alt
+                  <input name="imageAlt" type="text" maxlength="160" value="${escapeHtml(about.imageAlt)}">
+                </label>
+              </div>
+              <label data-editor-field="about.sectionContent">Section content
+                <textarea name="sectionContent" rows="4" maxlength="800">${escapeHtml(about.sectionContent)}</textarea>
+              </label>
+              <label data-editor-field="about.imageUrl">Image URL
+                <input name="imageUrl" type="text" maxlength="2000" value="${escapeHtml(about.imageUrl)}">
+              </label>
+              <label class="merchant-checkbox" data-editor-field="about.isActive">
+                <input name="isActive" type="checkbox" ${about.isActive ? "checked" : ""}>
+                <span>Show About</span>
+              </label>
+            </fieldset>
+            <p class="merchant-message" data-site-content-message="about" aria-live="polite"></p>
+            <div class="merchant-modal__actions">
+              <button class="merchant-primary-button" type="submit" data-save-about ${aboutControlsDisabled ? "disabled" : ""}>${aboutSaveText}</button>
+            </div>
+            ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
+          </form>
+        `
+      },
+      contact: {
+        id: "contact",
+        label: "Contact",
+        detail: "Contact details",
+        messageId: "contact",
+        openHref: `${rootPrefix()}contact.html`,
+        previewHtml: renderPreviewPage("contact", "contact", contactPreviewBody, footer),
+        editorHtml: `
+          <form class="merchant-form merchant-site-content__form" data-contact-form>
+            <fieldset ${contactControlsDisabled ? "disabled" : ""}>
+              <div class="merchant-form__row">
+                <label data-editor-field="contact.title">Title
+                  <input name="title" type="text" maxlength="120" value="${escapeHtml(contact.title)}">
+                </label>
+                <label data-editor-field="contact.phone">Phone
+                  <input name="phone" type="text" maxlength="60" value="${escapeHtml(contact.phone)}">
+                </label>
+              </div>
+              <label data-editor-field="contact.subtitle">Subtitle
+                <textarea name="subtitle" rows="2" maxlength="240">${escapeHtml(contact.subtitle)}</textarea>
+              </label>
+              <div class="merchant-form__row">
+                <label data-editor-field="contact.email">Email
+                  <input name="email" type="email" maxlength="120" value="${escapeHtml(contact.email)}">
+                </label>
+                <label data-editor-field="contact.openingHours">Opening hours
+                  <input name="openingHours" type="text" maxlength="160" value="${escapeHtml(contact.openingHours)}">
+                </label>
+              </div>
+              <label data-editor-field="contact.address">Address
+                <textarea name="address" rows="3" maxlength="280">${escapeHtml(contact.address)}</textarea>
+              </label>
+              <label data-editor-field="contact.googleMapEmbedUrl">Google Map embed URL
+                <input name="googleMapEmbedUrl" type="text" maxlength="1000" value="${escapeHtml(contact.googleMapEmbedUrl)}">
+              </label>
+              <label data-editor-field="contact.other">Other
+                <textarea name="other" rows="3" maxlength="360">${escapeHtml(contact.other)}</textarea>
+              </label>
+              <label class="merchant-checkbox" data-editor-field="contact.isActive">
+                <input name="isActive" type="checkbox" ${contact.isActive ? "checked" : ""}>
+                <span>Show Contact</span>
+              </label>
+            </fieldset>
+            <p class="merchant-message" data-site-content-message="contact" aria-live="polite"></p>
+            <div class="merchant-modal__actions">
+              <button class="merchant-primary-button" type="submit" data-save-contact ${contactControlsDisabled ? "disabled" : ""}>${contactSaveText}</button>
+            </div>
+            ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
+          </form>
+        `
+      },
+      footer: {
+        id: "footer",
+        label: "Footer",
+        detail: "Site footer",
+        messageId: "footer",
+        openHref: `${rootPrefix()}index.html`,
+        previewHtml: renderPreviewPage("footer", "home", footerPreviewBody, footer, true),
+        editorHtml: `
+          <form class="merchant-form merchant-site-content__form" data-footer-form>
+            <fieldset ${footerControlsDisabled ? "disabled" : ""}>
+              <div class="merchant-form__row">
+                <label data-editor-field="footer.logoText">Logo text
+                  <input name="logoText" type="text" maxlength="80" value="${escapeHtml(footer.logoText)}">
+                </label>
+                <label data-editor-field="footer.phone">Phone
+                  <input name="phone" type="text" maxlength="60" value="${escapeHtml(footer.phone)}">
+                </label>
+              </div>
+              <label data-editor-field="footer.description">Description
+                <textarea name="description" rows="3" maxlength="280">${escapeHtml(footer.description)}</textarea>
+              </label>
+              <div class="merchant-form__row">
+                <label data-editor-field="footer.email">Email
+                  <input name="email" type="email" maxlength="120" value="${escapeHtml(footer.email)}">
+                </label>
+                <label data-editor-field="footer.copyright">Copyright
+                  <input name="copyright" type="text" maxlength="160" value="${escapeHtml(footer.copyright)}">
+                </label>
+              </div>
+              <label data-editor-field="footer.address">Address
+                <textarea name="address" rows="3" maxlength="280">${escapeHtml(footer.address)}</textarea>
+              </label>
+              <div class="merchant-form__row">
+                <label data-editor-field="footer.instagramUrl">Instagram URL
+                  <input name="instagramUrl" type="text" maxlength="500" value="${escapeHtml(footer.instagramUrl)}">
+                </label>
+                <label data-editor-field="footer.facebookUrl">Facebook URL
+                  <input name="facebookUrl" type="text" maxlength="500" value="${escapeHtml(footer.facebookUrl)}">
+                </label>
+              </div>
+              <label class="merchant-checkbox" data-editor-field="footer.isActive">
+                <input name="isActive" type="checkbox" ${footer.isActive ? "checked" : ""}>
+                <span>Show Footer</span>
+              </label>
+            </fieldset>
+            <p class="merchant-message" data-site-content-message="footer" aria-live="polite"></p>
+            <div class="merchant-modal__actions">
+              <button class="merchant-primary-button" type="submit" data-save-footer ${footerControlsDisabled ? "disabled" : ""}>${footerSaveText}</button>
+            </div>
+            ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
+          </form>
+        `
+      }
+    };
+
+    POLICY_CONTENT_ITEMS.forEach((item) => {
+      const policy = policyDrafts[item.id] || fallbackPolicyContent(item);
+      const controlsAreDisabled = !canEdit || policyLoading[item.id] || policySaving[item.id];
+      const policySaveText = policySaving[item.id] ? "Saving..." : `Save ${item.label}`;
+      const policyPreviewBody = `
+        <section class="info-page policy-page">
+          <h1 data-preview-field="${escapeHtml(item.id)}.title">${escapeHtml(policy.title || item.label)}</h1>
+          ${policy.isActive ? `<div class="policy-page__content" data-preview-field="${escapeHtml(item.id)}.content"><p>${textToHtml(policy.content)}</p></div>` : ""}
+          <span class="merchant-site-content__status" data-preview-field="${escapeHtml(item.id)}.isActive">${policy.isActive ? "Visible" : "Hidden"}</span>
+        </section>
+      `;
+      modules[item.id] = {
+        id: item.id,
+        label: item.label,
+        detail: "Policy page",
+        messageId: item.id,
+        openHref: `${rootPrefix()}${item.key === "delivery" ? "delivery" : item.key === "payment" ? "payment" : "refund"}.html`,
+        previewHtml: renderPreviewPage(item.id, "policy", policyPreviewBody, footer),
+        editorHtml: `
+          <form class="merchant-form merchant-site-content__form" data-policy-form data-policy-id="${escapeHtml(item.id)}">
+            <fieldset ${controlsAreDisabled ? "disabled" : ""}>
+              <label data-editor-field="${escapeHtml(item.id)}.title">Title
+                <input name="title" type="text" maxlength="120" value="${escapeHtml(policy.title)}">
+              </label>
+              <label data-editor-field="${escapeHtml(item.id)}.content">Content
+                <textarea name="content" rows="9" maxlength="4000">${escapeHtml(policy.content)}</textarea>
+              </label>
+              <label class="merchant-checkbox" data-editor-field="${escapeHtml(item.id)}.isActive">
+                <input name="isActive" type="checkbox" ${policy.isActive ? "checked" : ""}>
+                <span>Show ${escapeHtml(item.label)}</span>
+              </label>
+            </fieldset>
+            <p class="merchant-message" data-site-content-message="${escapeHtml(item.id)}" aria-live="polite"></p>
+            <div class="merchant-modal__actions">
+              <button class="merchant-primary-button" type="submit" ${controlsAreDisabled ? "disabled" : ""}>${escapeHtml(policySaveText)}</button>
+            </div>
+            ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
+          </form>
+        `
+      };
+    });
+
+    if (!modules[activeSiteContentId]) activeSiteContentId = "home";
+    const activeModule = modules[activeSiteContentId];
+    const activeNavItem = siteContentNavItem(activeSiteContentId);
+
+    panel.innerHTML = `
+      <div class="merchant-page merchant-site-content">
+        <div class="merchant-page__heading">
+          <div>
+            <p class="merchant-eyebrow">\u9801\u9762\u5167\u5bb9</p>
+            <h1>Website Content</h1>
+          </div>
+          <a class="merchant-secondary-button merchant-site-content__preview" href="${escapeHtml(activeModule.openHref)}" target="_blank" rel="noopener noreferrer">Open live page</a>
+        </div>
+        <div class="merchant-site-content__studio">
+          <section class="merchant-site-content__preview-pane">
+            <div class="merchant-site-content__pane-header">
+              <div>
+                <span>Live Preview</span>
+                <strong>${escapeHtml(activeModule.label)}</strong>
+              </div>
+              <div class="merchant-site-content__viewport" aria-label="Preview size">
+                ${renderSiteContentViewportControls()}
+              </div>
+            </div>
+            <div class="merchant-site-content__preview-scroll">
+              <div class="merchant-site-content__device merchant-site-content__device--${escapeHtml(siteContentPreviewMode)} merchant-site-content__device--${escapeHtml(activeModule.id)}">
+                ${activeModule.previewHtml}
+              </div>
+            </div>
+          </section>
+          <aside class="merchant-site-content__editor-pane">
+            <div class="merchant-site-content__pane-header">
+              <div>
+                <span>Editor</span>
+                <strong>${escapeHtml(activeModule.label)}</strong>
+              </div>
+              <small>${escapeHtml(activeNavItem.detail)}</small>
+            </div>
+            <div class="merchant-site-content__editor-scroll">
+              ${activeModule.editorHtml}
+            </div>
+          </aside>
+        </div>
+      </div>
+    `;
+    updateSiteContentSidebarNav();
+    applyHomeHeroVisualSelection();
+    applyFooterVisualSelection();
+    applyContactVisualSelection();
+    applyAboutVisualSelection();
+    applyPolicyVisualSelection();
+
+    if (homeHeroLoading) setSiteContentMessage("Loading Home Hero...", "info");
+    if (footerLoading) setSiteContentMessage("Loading Footer...", "info", "footer");
+    if (contactLoading) setSiteContentMessage("Loading Contact...", "info", "contact");
+    if (aboutLoading) setSiteContentMessage("Loading About...", "info", "about");
+    POLICY_CONTENT_ITEMS.forEach((item) => {
+      if (policyLoading[item.id]) setSiteContentMessage(`Loading ${item.label}...`, "info", item.id);
+    });
+  }
+
+  async function loadMerchantRole(user) {
+    if (merchantRoleRequest) return merchantRoleRequest;
+    const previousRole = currentMerchantRole;
+    currentMerchantRoleLoaded = false;
+    currentMerchantRoleLoading = true;
+    currentMerchantRoleError = null;
+
+    merchantRoleRequest = (async () => {
+      try {
+        const firebase = await firebaseService();
+        const uid = String(firebase.auth?.currentUser?.uid || user?.uid || currentMerchant?.uid || "").trim();
+        if (!uid) throw new Error("Cannot find current merchant UID.");
+        const role = await firebase.getMerchantRole(uid);
+        currentMerchantRole = role || previousRole;
+        currentMerchantRoleError = null;
+        return currentMerchantRole;
+      } catch (error) {
+        currentMerchantRole = previousRole;
+        currentMerchantRoleError = error;
+        console.warn("Merchant role lookup failed.", error);
+        return currentMerchantRole;
+      } finally {
+        currentMerchantRoleLoaded = true;
+        currentMerchantRoleLoading = false;
+        merchantRoleRequest = null;
+      }
+    })();
+
+    return merchantRoleRequest;
+  }
+
+  async function ensurePageContentPermission() {
+    const uid = String(window.onlineShopFirebase?.auth?.currentUser?.uid || currentMerchant?.uid || "").trim();
+    if (!currentMerchant || !isAllowedMerchant(currentMerchant)) {
+      console.debug({
+        action: "ensurePageContentPermission",
+        uid,
+        roleData: currentMerchantRole,
+        pagesWriteResult: false
+      });
+      return false;
+    }
+    if (!currentMerchantRoleLoaded || currentMerchantRoleLoading) {
+      renderSiteContentPanel();
+      await loadMerchantRole(currentMerchant);
+      renderSiteContentPanel();
+    }
+    const pagesWriteResult = hasRolePagesWrite();
+    console.debug({
+      action: "ensurePageContentPermission",
+      uid,
+      roleData: currentMerchantRole,
+      pagesWriteResult
+    });
+    return pagesWriteResult;
+  }
+
+  async function loadHomeHeroContent() {
+    if (!currentMerchant || !document.querySelector("[data-site-content-panel]")) return;
+    homeHeroLoading = true;
+    homeHeroDraft = homeHeroDraft || fallbackHomeHero();
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      const remoteHero = await firebase.getSiteContent("home");
+      homeHeroDraft = normalizeHomeHero(remoteHero);
+      homeHeroLoading = false;
+      renderSiteContentPanel();
+      setSiteContentMessage(remoteHero ? "Home Hero loaded." : "Using fallback Home Hero.", "success");
+    } catch (error) {
+      homeHeroLoading = false;
+      homeHeroDraft = homeHeroDraft || fallbackHomeHero();
+      renderSiteContentPanel();
+      setSiteContentMessage(merchantErrorMessage(error, "Could not load Home Hero. Using fallback content."), "error");
+    }
+  }
+
+  async function loadFooterContent() {
+    if (!currentMerchant || !document.querySelector("[data-site-content-panel]")) return;
+    footerLoading = true;
+    footerDraft = footerDraft || fallbackFooterContent();
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      const remoteFooter = await firebase.getSiteContent("footer");
+      footerDraft = normalizeFooterContent(remoteFooter);
+      footerLoading = false;
+      renderSiteContentPanel();
+      setSiteContentMessage(remoteFooter ? "Footer loaded." : "Using fallback Footer.", "success", "footer");
+    } catch (error) {
+      footerLoading = false;
+      footerDraft = footerDraft || fallbackFooterContent();
+      renderSiteContentPanel();
+      setSiteContentMessage(merchantErrorMessage(error, "Could not load Footer. Using fallback content."), "error", "footer");
+    }
+  }
+
+  async function loadContactContent() {
+    if (!currentMerchant || !document.querySelector("[data-site-content-panel]")) return;
+    contactLoading = true;
+    contactDraft = contactDraft || fallbackContactContent();
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      const remoteContact = await firebase.getSiteContent("contact");
+      contactDraft = normalizeContactContent(remoteContact);
+      contactLoading = false;
+      renderSiteContentPanel();
+      setSiteContentMessage(remoteContact ? "Contact loaded." : "Using fallback Contact.", "success", "contact");
+    } catch (error) {
+      contactLoading = false;
+      contactDraft = contactDraft || fallbackContactContent();
+      renderSiteContentPanel();
+      setSiteContentMessage(merchantErrorMessage(error, "Could not load Contact. Using fallback content."), "error", "contact");
+    }
+  }
+
+  async function loadAboutContent() {
+    if (!currentMerchant || !document.querySelector("[data-site-content-panel]")) return;
+    aboutLoading = true;
+    aboutDraft = aboutDraft || fallbackAboutContent();
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      const remoteAbout = await firebase.getSiteContent("about");
+      aboutDraft = normalizeAboutContent(remoteAbout);
+      aboutLoading = false;
+      renderSiteContentPanel();
+      setSiteContentMessage(remoteAbout ? "About loaded." : "Using fallback About.", "success", "about");
+    } catch (error) {
+      aboutLoading = false;
+      aboutDraft = aboutDraft || fallbackAboutContent();
+      renderSiteContentPanel();
+      setSiteContentMessage(merchantErrorMessage(error, "Could not load About. Using fallback content."), "error", "about");
+    }
+  }
+
+  async function loadPolicyContentItem(item) {
+    if (!currentMerchant || !document.querySelector("[data-site-content-panel]")) return;
+    policyLoading = { ...policyLoading, [item.id]: true };
+    policyDrafts = {
+      ...policyDrafts,
+      [item.id]: policyDrafts[item.id] || fallbackPolicyContent(item)
+    };
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      const remotePolicy = await firebase.getSiteContent(item.docId);
+      policyDrafts = {
+        ...policyDrafts,
+        [item.id]: normalizePolicyContent(item, remotePolicy)
+      };
+      policyLoading = { ...policyLoading, [item.id]: false };
+      renderSiteContentPanel();
+      setSiteContentMessage(remotePolicy ? `${item.label} loaded.` : `Using fallback ${item.label}.`, "success", item.id);
+    } catch (error) {
+      policyLoading = { ...policyLoading, [item.id]: false };
+      policyDrafts = {
+        ...policyDrafts,
+        [item.id]: policyDrafts[item.id] || fallbackPolicyContent(item)
+      };
+      renderSiteContentPanel();
+      setSiteContentMessage(merchantErrorMessage(error, `Could not load ${item.label}. Using fallback content.`), "error", item.id);
+    }
+  }
+
+  function loadPolicyContents() {
+    POLICY_CONTENT_ITEMS.forEach((item) => {
+      loadPolicyContentItem(item);
+    });
+  }
+
+  async function uploadHomeHeroImage(input) {
+    if (!currentMerchant) return;
+    if (!(await ensurePageContentPermission())) {
+      setSiteContentMessage("pagesWrite permission is not enabled for this account.", "error");
+      return;
+    }
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+    syncHomeHeroDraftFromForm();
+    if (!file.type.startsWith("image/")) {
+      setSiteContentMessage("Please choose an image file.", "error");
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      setSiteContentMessage("Image exceeds the 10MB limit.", "error");
+      return;
+    }
+
+    homeHeroUploading = true;
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      const uploaded = await firebase.uploadSiteContentImage("home", file);
+      homeHeroDraft = {
+        ...(homeHeroDraft || fallbackHomeHero()),
+        imageUrl: uploaded.url,
+        imagePath: uploaded.path,
+        imageAlt: homeHeroDraft?.imageAlt || file.name
+      };
+      homeHeroUploading = false;
+      renderSiteContentPanel();
+      setSiteContentMessage("Image uploaded. Save Home Hero to publish it.", "success");
+    } catch (error) {
+      homeHeroUploading = false;
+      renderSiteContentPanel();
+      const code = String(error?.code || "");
+      const message = code === "storage/unauthorized" || code === "permission-denied"
+        ? "Storage rejected the Home Hero image upload. Please check deployed storage.rules for site-content/**."
+        : "Could not upload image.";
+      setSiteContentMessage(message, "error");
+    }
+  }
+
+  async function saveHomeHeroForm(form) {
+    if (!currentMerchant) return;
+    if (!(await ensurePageContentPermission())) {
+      setSiteContentMessage("pagesWrite permission is not enabled for this account.", "error");
+      return;
+    }
+    const draft = syncHomeHeroDraftFromForm(form);
+    const payload = {
+      type: "homeHero",
+      title: draft.title,
+      subtitle: draft.subtitle,
+      imageUrl: draft.imageUrl,
+      imagePath: draft.imagePath,
+      imageAlt: draft.imageAlt,
+      buttonText: draft.buttonText,
+      buttonHref: draft.buttonHref,
+      isActive: draft.isActive
+    };
+
+    homeHeroSaving = true;
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      await firebase.saveSiteContent("home", payload);
+      homeHeroSaving = false;
+      homeHeroDraft = normalizeHomeHero(payload);
+      renderSiteContentPanel();
+      setSiteContentMessage("Home Hero saved.", "success");
+      showMerchantToast("Home Hero saved");
+    } catch (error) {
+      homeHeroSaving = false;
+      renderSiteContentPanel();
+      console.error({
+        action: "saveHomeHeroForm",
+        code: error?.code,
+        message: error?.message,
+        payload
+      });
+      const message = error?.code === "permission-denied"
+        ? "Firestore rejected the Home Hero save. Please check deployed firestore.rules for siteContent/home."
+        : "Could not save Home Hero.";
+      setSiteContentMessage(message, "error");
+    }
+  }
+
+  async function saveFooterForm(form) {
+    if (!currentMerchant) return;
+    if (!(await ensurePageContentPermission())) {
+      setSiteContentMessage("pagesWrite permission is not enabled for this account.", "error", "footer");
+      return;
+    }
+    const draft = syncFooterDraftFromForm(form);
+    const payload = {
+      type: "footer",
+      logoText: draft.logoText,
+      description: draft.description,
+      phone: draft.phone,
+      email: draft.email,
+      address: draft.address,
+      copyright: draft.copyright,
+      instagramUrl: draft.instagramUrl,
+      facebookUrl: draft.facebookUrl,
+      isActive: draft.isActive
+    };
+
+    footerSaving = true;
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      await firebase.saveSiteContent("footer", payload);
+      footerSaving = false;
+      footerDraft = normalizeFooterContent(payload);
+      renderSiteContentPanel();
+      setSiteContentMessage("Footer saved.", "success", "footer");
+      showMerchantToast("Footer saved");
+    } catch (error) {
+      footerSaving = false;
+      renderSiteContentPanel();
+      console.error({
+        action: "saveFooterForm",
+        code: error?.code,
+        message: error?.message,
+        payload
+      });
+      const message = error?.code === "permission-denied"
+        ? "Firestore rejected the Footer save. Please check deployed firestore.rules for siteContent/footer."
+        : "Could not save Footer.";
+      setSiteContentMessage(message, "error", "footer");
+    }
+  }
+
+  async function saveContactForm(form) {
+    if (!currentMerchant) return;
+    if (!(await ensurePageContentPermission())) {
+      setSiteContentMessage("pagesWrite permission is not enabled for this account.", "error", "contact");
+      return;
+    }
+    const draft = syncContactDraftFromForm(form);
+    const payload = {
+      type: "contact",
+      title: draft.title,
+      subtitle: draft.subtitle,
+      address: draft.address,
+      phone: draft.phone,
+      email: draft.email,
+      openingHours: draft.openingHours,
+      googleMapEmbedUrl: draft.googleMapEmbedUrl,
+      other: draft.other,
+      isActive: draft.isActive
+    };
+
+    contactSaving = true;
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      await firebase.saveSiteContent("contact", payload);
+      contactSaving = false;
+      contactDraft = normalizeContactContent(payload);
+      renderSiteContentPanel();
+      setSiteContentMessage("Contact saved.", "success", "contact");
+      showMerchantToast("Contact saved");
+    } catch (error) {
+      contactSaving = false;
+      renderSiteContentPanel();
+      console.error({
+        action: "saveContactForm",
+        code: error?.code,
+        message: error?.message,
+        payload
+      });
+      const message = error?.code === "permission-denied"
+        ? "Firestore rejected the Contact save. Please check deployed firestore.rules for siteContent/contact."
+        : "Could not save Contact.";
+      setSiteContentMessage(message, "error", "contact");
+    }
+  }
+
+  async function saveAboutForm(form) {
+    if (!currentMerchant) return;
+    if (!(await ensurePageContentPermission())) {
+      setSiteContentMessage("pagesWrite permission is not enabled for this account.", "error", "about");
+      return;
+    }
+    const draft = syncAboutDraftFromForm(form);
+    const payload = {
+      type: "about",
+      title: draft.title,
+      subtitle: draft.subtitle,
+      intro: draft.intro,
+      sectionTitle: draft.sectionTitle,
+      sectionContent: draft.sectionContent,
+      imageUrl: draft.imageUrl,
+      imageAlt: draft.imageAlt,
+      isActive: draft.isActive
+    };
+
+    aboutSaving = true;
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      await firebase.saveSiteContent("about", payload);
+      aboutSaving = false;
+      aboutDraft = normalizeAboutContent(payload);
+      renderSiteContentPanel();
+      setSiteContentMessage("About saved.", "success", "about");
+      showMerchantToast("About saved");
+    } catch (error) {
+      aboutSaving = false;
+      renderSiteContentPanel();
+      console.error({
+        action: "saveAboutForm",
+        code: error?.code,
+        message: error?.message,
+        payload
+      });
+      const message = error?.code === "permission-denied"
+        ? "Firestore rejected the About save. Please check deployed firestore.rules for siteContent/about."
+        : "Could not save About.";
+      setSiteContentMessage(message, "error", "about");
+    }
+  }
+
+  async function savePolicyForm(form) {
+    if (!currentMerchant) return;
+    const item = policyItemById(form?.dataset?.policyId || "");
+    if (!item) return;
+    if (!(await ensurePageContentPermission())) {
+      setSiteContentMessage("pagesWrite permission is not enabled for this account.", "error", item.id);
+      return;
+    }
+    const draft = syncPolicyDraftFromForm(form);
+    if (!draft) return;
+    const payload = {
+      type: "policy",
+      policyKey: item.key,
+      title: draft.title,
+      content: draft.content,
+      isActive: draft.isActive
+    };
+
+    policySaving = { ...policySaving, [item.id]: true };
+    renderSiteContentPanel();
+    try {
+      const firebase = await firebaseService();
+      await firebase.saveSiteContent(item.docId, payload);
+      policySaving = { ...policySaving, [item.id]: false };
+      policyDrafts = {
+        ...policyDrafts,
+        [item.id]: normalizePolicyContent(item, payload)
+      };
+      renderSiteContentPanel();
+      setSiteContentMessage(`${item.label} saved.`, "success", item.id);
+      showMerchantToast(`${item.label} saved`);
+    } catch (error) {
+      policySaving = { ...policySaving, [item.id]: false };
+      renderSiteContentPanel();
+      console.error({
+        action: "savePolicyForm",
+        code: error?.code,
+        message: error?.message,
+        docId: item.docId,
+        payload
+      });
+      const message = error?.code === "permission-denied"
+        ? `Firestore rejected the ${item.label} save. Please check deployed firestore.rules for siteContent/${item.docId}.`
+        : `Could not save ${item.label}.`;
+      setSiteContentMessage(message, "error", item.id);
+    }
+  }
+
   function cleanupProductImages(urls) {
     Promise.allSettled(uniqueStrings(urls).map((url) => store.deleteProductImage(url)))
       .then((results) => {
@@ -1382,6 +3084,12 @@
     currentMerchant = user;
     renderMerchantDashboardShell(user);
     ensureMerchantModals();
+    renderSiteContentPanel();
+    loadHomeHeroContent();
+    loadFooterContent();
+    loadContactContent();
+    loadAboutContent();
+    loadPolicyContents();
     renderProductRows();
   }
   function ensureMerchantModals() {
@@ -1842,6 +3550,9 @@
       currentMerchantRole = null;
       console.warn("無法讀取或同步商戶權限。", error);
     }
+    currentMerchantRoleLoaded = true;
+    currentMerchantRoleLoading = false;
+    currentMerchantRoleError = null;
 
     updateMerchantNav(user);
 
@@ -1892,6 +3603,37 @@
       await saveUserForm(userForm);
       return;
     }
+    const homeHeroForm = event.target.closest("[data-home-hero-form]");
+    if (homeHeroForm && currentMerchant) {
+      event.preventDefault();
+      await saveHomeHeroForm(homeHeroForm);
+      return;
+    }
+    const footerForm = event.target.closest("[data-footer-form]");
+    if (footerForm && currentMerchant) {
+      event.preventDefault();
+      await saveFooterForm(footerForm);
+      return;
+    }
+    const contactForm = event.target.closest("[data-contact-form]");
+    if (contactForm && currentMerchant) {
+      event.preventDefault();
+      await saveContactForm(contactForm);
+      return;
+    }
+    const aboutForm = event.target.closest("[data-about-form]");
+    if (aboutForm && currentMerchant) {
+      event.preventDefault();
+      await saveAboutForm(aboutForm);
+      return;
+    }
+    const policyForm = event.target.closest("[data-policy-form]");
+    if (policyForm && currentMerchant) {
+      event.preventDefault();
+      await savePolicyForm(policyForm);
+      return;
+    }
+
     const form = event.target.closest("[data-merchant-editor-form]");
     if (!form || !currentMerchant) return;
     event.preventDefault();
@@ -1900,6 +3642,41 @@
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && document.querySelector(".merchant-modal.is-open")) closeMerchantModals();
+  });
+
+  document.addEventListener("focusin", (event) => {
+    if (suppressHomeHeroFocusActivation) return;
+    const editorField = event.target.closest("[data-home-hero-form] [data-editor-field]");
+    if (!editorField) return;
+    activateHomeHeroField(editorField.getAttribute("data-editor-field"), "editor");
+  });
+
+  document.addEventListener("focusin", (event) => {
+    if (suppressFooterFocusActivation) return;
+    const editorField = event.target.closest("[data-footer-form] [data-editor-field]");
+    if (!editorField) return;
+    activateFooterField(editorField.getAttribute("data-editor-field"), "editor");
+  });
+
+  document.addEventListener("focusin", (event) => {
+    if (suppressContactFocusActivation) return;
+    const editorField = event.target.closest("[data-contact-form] [data-editor-field]");
+    if (!editorField) return;
+    activateContactField(editorField.getAttribute("data-editor-field"), "editor");
+  });
+
+  document.addEventListener("focusin", (event) => {
+    if (suppressAboutFocusActivation) return;
+    const editorField = event.target.closest("[data-about-form] [data-editor-field]");
+    if (!editorField) return;
+    activateAboutField(editorField.getAttribute("data-editor-field"), "editor");
+  });
+
+  document.addEventListener("focusin", (event) => {
+    if (suppressPolicyFocusActivation) return;
+    const editorField = event.target.closest("[data-policy-form] [data-editor-field]");
+    if (!editorField) return;
+    activatePolicyField(editorField.getAttribute("data-editor-field"), "editor");
   });
 
   document.addEventListener("click", async (event) => {
@@ -1913,6 +3690,82 @@
     if (event.target.closest("[data-open-invite-modal]")) return openInviteModal();
     if (event.target.closest("[data-copy-invite-link]")) return copyInviteLink();
     if (event.target.closest("[data-merchant-dashboard-logout]")) return handleMerchantLogout();
+    const siteContentNavButton = event.target.closest("[data-site-content-nav]");
+    if (siteContentNavButton) {
+      syncVisibleSiteContentDrafts();
+      activeSiteContentId = siteContentNavButton.getAttribute("data-site-content-nav") || "home";
+      activeDashboardSection = "site";
+      clearSiteContentVisualSelectionState();
+      setMerchantSectionActive("site");
+      renderSiteContentPanel();
+      return;
+    }
+    const previewModeButton = event.target.closest("[data-site-content-preview-mode]");
+    if (previewModeButton) {
+      syncVisibleSiteContentDrafts();
+      siteContentPreviewMode = previewModeButton.getAttribute("data-site-content-preview-mode") || "desktop";
+      renderSiteContentPanel();
+      return;
+    }
+    const previewField = event.target.closest('[data-preview-id="homeHero"] [data-preview-field]');
+    if (previewField) {
+      if (event.target.closest("a, button")) event.preventDefault();
+      activateHomeHeroField(previewField.getAttribute("data-preview-field"), "preview");
+      return;
+    }
+    const editorField = event.target.closest("[data-home-hero-form] [data-editor-field]");
+    if (editorField) {
+      activateHomeHeroField(editorField.getAttribute("data-editor-field"), "editor");
+      return;
+    }
+    const footerPreviewField = event.target.closest('[data-preview-id="footer"] [data-preview-field]');
+    if (footerPreviewField) {
+      if (event.target.closest("a, button")) event.preventDefault();
+      activateFooterField(footerPreviewField.getAttribute("data-preview-field"), "preview");
+      return;
+    }
+    const footerEditorField = event.target.closest("[data-footer-form] [data-editor-field]");
+    if (footerEditorField) {
+      activateFooterField(footerEditorField.getAttribute("data-editor-field"), "editor");
+      return;
+    }
+    const contactPreviewField = event.target.closest('[data-preview-id="contact"] [data-preview-field]');
+    if (contactPreviewField) {
+      if (event.target.closest("a, button")) event.preventDefault();
+      activateContactField(contactPreviewField.getAttribute("data-preview-field"), "preview");
+      return;
+    }
+    const contactEditorField = event.target.closest("[data-contact-form] [data-editor-field]");
+    if (contactEditorField) {
+      activateContactField(contactEditorField.getAttribute("data-editor-field"), "editor");
+      return;
+    }
+    const aboutPreviewField = event.target.closest('[data-preview-id="about"] [data-preview-field]');
+    if (aboutPreviewField) {
+      if (event.target.closest("a, button")) event.preventDefault();
+      activateAboutField(aboutPreviewField.getAttribute("data-preview-field"), "preview");
+      return;
+    }
+    const aboutEditorField = event.target.closest("[data-about-form] [data-editor-field]");
+    if (aboutEditorField) {
+      activateAboutField(aboutEditorField.getAttribute("data-editor-field"), "editor");
+      return;
+    }
+    const policyPreviewField = event.target.closest('[data-preview-id^="policy"] [data-preview-field]');
+    if (policyPreviewField) {
+      if (event.target.closest("a, button")) event.preventDefault();
+      activatePolicyField(policyPreviewField.getAttribute("data-preview-field"), "preview");
+      return;
+    }
+    const policyEditorField = event.target.closest("[data-policy-form] [data-editor-field]");
+    if (policyEditorField) {
+      activatePolicyField(policyEditorField.getAttribute("data-editor-field"), "editor");
+      return;
+    }
+    if (event.target.closest(".merchant-site-content__preview-scroll a, .merchant-site-content__preview-scroll button")) {
+      event.preventDefault();
+      return;
+    }
     const usersSubtabButton = event.target.closest("[data-users-subtab]");
     if (usersSubtabButton) {
       usersSubsection = usersSubtabButton.dataset.usersSubtab || "list";
@@ -1934,6 +3787,10 @@
       document.querySelectorAll("[data-merchant-panel]").forEach((panel) => {
         panel.classList.toggle("is-active", panel.dataset.merchantPanel === section);
       });
+      if (section === "site") {
+        updateSiteContentSidebarNav();
+        renderSiteContentPanel();
+      }
       return;
     }
 
