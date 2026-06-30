@@ -505,9 +505,13 @@
     const activeSection = activeDashboardSection;
     const navHtml = sections
       .map((section) => {
-        const button = `<button class="${section.id === activeSection ? "is-active" : ""}" type="button" data-merchant-section="${section.id}">${section.label}</button>`;
+        const sectionClasses = [
+          section.id === activeSection ? "is-active" : "",
+          section.id === "site" ? "page-content-sidebar-trigger" : ""
+        ].filter(Boolean).join(" ");
+        const button = `<button class="${sectionClasses}" type="button" data-merchant-section="${section.id}">${section.label}</button>`;
         if (section.id !== "site") return button;
-        return `${button}<div class="merchant-dashboard__page-subnav" data-site-content-sidebar-nav>${renderSiteContentSubnav(activeSiteContentId)}</div>`;
+        return `${button}<div class="page-content-sidebar-nav" data-site-content-sidebar-nav>${renderSiteContentSubnav(activeSiteContentId)}</div>`;
       })
       .join("");
     container.innerHTML = `
@@ -2041,7 +2045,7 @@
 
   function renderSiteContentSubnav(activeId) {
     return SITE_CONTENT_NAV_ITEMS.map((item) => `
-      <button class="${item.id === activeId ? "is-active" : ""}" type="button" data-site-content-nav="${escapeHtml(item.id)}">
+      <button class="page-content-sidebar-nav__item ${item.id === activeId ? "is-active" : ""}" type="button" data-site-content-nav="${escapeHtml(item.id)}">
         <span>${escapeHtml(item.label)}</span>
         <small>${escapeHtml(item.detail)}</small>
       </button>
