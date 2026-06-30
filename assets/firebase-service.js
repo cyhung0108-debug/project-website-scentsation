@@ -515,6 +515,7 @@
         total: Number(orderData.total || 0),
         paymentMethod: "credit_card",
         paymentStatus: "mock_paid",
+        cardLast4: String(orderData.cardLast4 || "").replace(/\D/g, "").slice(-4),
         status: "pending",
         note: String(orderData.note || "").trim(),
         createdAt: firestoreSdk.serverTimestamp()
@@ -529,8 +530,17 @@
         throw new Error("送貨上門需要填寫收貨地址。");
       }
       if (!payload.items.length) throw new Error("購物車暫時沒有商品。");
+      if (!payload.cardLast4 || payload.cardLast4.length < 4) throw new Error("請填寫有效的信用卡卡號。");
       const docRef = await firestoreSdk.addDoc(firestoreSdk.collection(db, "orders"), payload);
       return { id: docRef.id, ...payload };
+    }
+
+    async function getOrder(orderId) {
+      const normalizedId = String(orderId || "").trim();
+      if (!normalizedId) throw new Error("找不到訂單 ID。");
+      const snapshot = await firestoreSdk.getDoc(firestoreSdk.doc(db, "orders", normalizedId));
+      if (!snapshot.exists()) return null;
+      return normalizeOrderRecord(snapshot);
     }
 
     async function updateOrder(orderId, updates) {
@@ -692,6 +702,7 @@
       listenCurrentUserOrders,
       listenOrdersByCustomer,
       createOrder,
+      getOrder,
       updateOrder,
       createUserInvite,
       listenUserInvites,

@@ -352,6 +352,32 @@
     return order.customerEmail || order.email || order.customer?.email || "未有資料";
   }
 
+  function orderCustomerName(order) {
+    return order.customerName || order.customer?.name || order.customer?.displayName || "未有資料";
+  }
+
+  function orderRecipientName(order) {
+    return order.recipientName || order.recipient?.name || "未有資料";
+  }
+
+  function orderPaymentMethodLabel(value) {
+    return value === "credit_card" ? "信用卡" : value || "未有資料";
+  }
+
+  function orderPaymentStatusLabel(value) {
+    const labels = {
+      mock_paid: "測試付款已完成",
+      paid: "已付款",
+      pending: "待付款",
+      failed: "付款失敗"
+    };
+    return labels[value] || value || "未有資料";
+  }
+
+  function orderDeliveryMethodLabel(value) {
+    return value === "delivery" ? "送貨上門" : "到店自取";
+  }
+
   function orderStatusLabel(status) {
     const labels = {
       pending: "待處理",
@@ -396,6 +422,7 @@
     const sections = [
       canOpenUsersSection() ? { id: "users", label: "\u7528\u6236\u7ba1\u7406" } : null,
       canReadSales() ? { id: "sales", label: "\u92b7\u552e\u7ba1\u7406" } : null,
+      hasPermission("ordersRead") ? { id: "order-records", label: "訂單記錄" } : null,
       (canManageProducts() || hasPermission("categoriesManage")) ? { id: "products", label: "\u7522\u54c1\u7ba1\u7406" } : null,
       canManagePages() ? { id: "site", label: "\u7db2\u9801\u7ba1\u7406" } : null,
       canManagePermissions() ? { id: "permissions", label: "\u6b0a\u9650\u7ba1\u7406" } : null
@@ -450,6 +477,13 @@
               </div>
               <p class="merchant-data-message" data-orders-message>\u6b63\u5728\u8f09\u5165\u8a02\u55ae\u8cc7\u6599\u2026</p>
               <div class="merchant-table-wrap" data-orders-table></div>
+            </div>
+          </section>
+          <section class="merchant-dashboard-section ${activeSection === "order-records" ? "is-active" : ""}" data-merchant-panel="order-records">
+            <h1>訂單記錄</h1>
+            <div class="merchant-data-panel" data-order-records-panel>
+              <p class="merchant-data-message" data-order-records-message>正在載入訂單記錄…</p>
+              <div class="merchant-table-wrap" data-order-records-table></div>
             </div>
           </section>
           <section class="merchant-dashboard-section ${activeSection === "products" ? "is-active" : ""}" data-merchant-panel="products">
@@ -1086,6 +1120,7 @@
 
   function renderOrders(orders) {
     currentOrders = Array.isArray(orders) ? orders : [];
+    renderOrderRecords(currentOrders);
     const todaySales = document.querySelector("[data-today-sales]");
     const totalOrders = document.querySelector("[data-total-orders]");
     const totalSales = document.querySelector("[data-total-sales]");
@@ -1117,29 +1152,151 @@
     table.innerHTML = `
       <table class="merchant-data-table">
         <thead>
-          <tr><th>訂單編號</th><th>顧客 email</th><th>金額</th><th>狀態</th><th>建立時間</th></tr>
+          <tr><th>訂單編號</th><th>下單時間</th><th>顧客名稱</th><th>價錢</th><th>付款方式</th></tr>
         </thead>
         <tbody>
           ${currentOrders.slice(0, 20).map((order) => `
             <tr>
               <td>${escapeHtml(order.orderNumber || order.id)}</td>
-              <td>${escapeHtml(orderCustomerEmail(order))}</td>
-              <td>${formatDashboardPrice(orderAmount(order))}</td>
-              <td>${escapeHtml(orderStatusLabel(order.status))}</td>
               <td>${escapeHtml(formatDateTime(order.createdAt))}</td>
+              <td>${escapeHtml(orderCustomerName(order))}</td>
+              <td>${formatDashboardPrice(orderAmount(order))}</td>
+              <td>${escapeHtml(orderPaymentMethodLabel(order.paymentMethod))}</td>
             </tr>
           `).join("")}
         </tbody>
       </table>`;
   }
 
+  function renderOrderRecords(orders = currentOrders) {
+    const message = document.querySelector("[data-order-records-message]");
+    const table = document.querySelector("[data-order-records-table]");
+    if (!message || !table) return;
+    if (!hasPermission("ordersRead")) {
+      message.textContent = "你沒有查看訂單記錄的權限。";
+      table.innerHTML = "";
+      return;
+    }
+    const records = Array.isArray(orders) ? orders : [];
+    if (!records.length) {
+      message.textContent = "暫時沒有訂單記錄。";
+      table.innerHTML = "";
+      return;
+    }
+    message.textContent = "";
+    table.innerHTML = `
+      <table class="merchant-data-table merchant-order-records-table">
+        <thead>
+          <tr>
+            <th>訂單編號</th>
+            <th>下單時間</th>
+            <th>顧客名稱</th>
+            <th>顧客 Email</th>
+            <th>收件人名稱</th>
+            <th>金額</th>
+            <th>付款方式</th>
+            <th>付款狀態</th>
+            <th>訂單狀態</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${records.map((order) => `
+            <tr>
+              <td>${escapeHtml(order.orderNumber || order.id)}</td>
+              <td>${escapeHtml(formatDateTime(order.createdAt))}</td>
+              <td>${escapeHtml(orderCustomerName(order))}</td>
+              <td>${escapeHtml(orderCustomerEmail(order))}</td>
+              <td>${escapeHtml(orderRecipientName(order))}</td>
+              <td>${formatDashboardPrice(orderAmount(order))}</td>
+              <td>${escapeHtml(orderPaymentMethodLabel(order.paymentMethod))}</td>
+              <td>${escapeHtml(orderPaymentStatusLabel(order.paymentStatus))}</td>
+              <td>${escapeHtml(orderStatusLabel(order.status))}</td>
+              <td><button class="merchant-secondary-button" type="button" data-view-order="${escapeHtml(order.id)}">查看詳情</button></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>`;
+  }
+
+  function renderOrderDetails(order) {
+    const items = Array.isArray(order.items) ? order.items : [];
+    return `
+      <h2 id="merchantOrderTitle">訂單詳情</h2>
+      <div class="merchant-order-detail">
+        <section>
+          <h3>訂單資料</h3>
+          <p><span>訂單編號</span><strong>${escapeHtml(order.orderNumber || order.id)}</strong></p>
+          <p><span>下單時間</span><strong>${escapeHtml(formatDateTime(order.createdAt))}</strong></p>
+          <p><span>訂單狀態</span><strong>${escapeHtml(orderStatusLabel(order.status))}</strong></p>
+        </section>
+        <section>
+          <h3>顧客資料</h3>
+          <p><span>顧客名稱</span><strong>${escapeHtml(orderCustomerName(order))}</strong></p>
+          <p><span>顧客 Email</span><strong>${escapeHtml(orderCustomerEmail(order))}</strong></p>
+          <p><span>顧客電話</span><strong>${escapeHtml(order.customerPhone || "未有資料")}</strong></p>
+        </section>
+        <section>
+          <h3>收件人資料</h3>
+          <p><span>收件人</span><strong>${escapeHtml(orderRecipientName(order))}</strong></p>
+          <p><span>聯絡電話</span><strong>${escapeHtml(order.recipientPhone || "未有資料")}</strong></p>
+          <p><span>收貨方式</span><strong>${escapeHtml(orderDeliveryMethodLabel(order.deliveryMethod))}</strong></p>
+          ${order.deliveryMethod === "delivery" ? `<p><span>收貨地址</span><strong>${escapeHtml(order.deliveryAddress || "未有資料")}</strong></p>` : ""}
+        </section>
+        <section>
+          <h3>購買產品</h3>
+          <div class="merchant-order-detail__items">
+            ${items.length ? items.map((item) => `
+              <article>
+                <span>${escapeHtml(item.name || item.productId || "商品")}</span>
+                <span>x ${Number(item.quantity || 0)}</span>
+                <strong>${formatDashboardPrice(item.subtotal || (Number(item.price || 0) * Number(item.quantity || 0)))}</strong>
+              </article>
+            `).join("") : `<p>未有商品資料。</p>`}
+          </div>
+        </section>
+        <section>
+          <h3>價錢明細</h3>
+          <p><span>商品小計</span><strong>${formatDashboardPrice(order.subtotal)}</strong></p>
+          <p><span>優惠扣減</span><strong>-${formatDashboardPrice(order.discount)}</strong></p>
+          <p><span>運費</span><strong>${formatDashboardPrice(order.shippingFee)}</strong></p>
+          <p><span>附加費</span><strong>${formatDashboardPrice(order.extraFee)}</strong></p>
+          <p><span>合計</span><strong>${formatDashboardPrice(orderAmount(order))}</strong></p>
+        </section>
+        <section>
+          <h3>付款資料</h3>
+          <p><span>付款方式</span><strong>${escapeHtml(orderPaymentMethodLabel(order.paymentMethod))}</strong></p>
+          <p><span>付款狀態</span><strong>${escapeHtml(orderPaymentStatusLabel(order.paymentStatus))}</strong></p>
+          ${order.cardLast4 ? `<p><span>卡號末四位</span><strong>**** ${escapeHtml(order.cardLast4)}</strong></p>` : ""}
+        </section>
+        ${order.note ? `<section><h3>訂單備註</h3><p>${escapeHtml(order.note)}</p></section>` : ""}
+        <div class="merchant-modal__actions"><button class="merchant-secondary-button" type="button" data-close-merchant-modal>關閉</button></div>
+      </div>
+    `;
+  }
+
+  function openOrderDetails(orderId) {
+    if (!hasPermission("ordersRead")) return showMerchantToast("你沒有查看訂單記錄的權限。");
+    const order = currentOrders.find((item) => String(item.id) === String(orderId));
+    if (!order) return showMerchantToast("找不到訂單資料。");
+    const modal = document.querySelector("#merchantOrderModal");
+    const content = document.querySelector("[data-merchant-order-content]");
+    if (!modal || !content) return;
+    content.innerHTML = renderOrderDetails(order);
+    openModal(modal);
+  }
+
   function renderOrdersError(error) {
     const message = document.querySelector("[data-orders-message]");
     const table = document.querySelector("[data-orders-table]");
+    const recordsMessage = document.querySelector("[data-order-records-message]");
+    const recordsTable = document.querySelector("[data-order-records-table]");
     if (!message) return;
     message.dataset.type = "error";
     message.textContent = merchantErrorMessage(error, "無法讀取訂單資料。");
     if (table) table.innerHTML = "";
+    if (recordsMessage) recordsMessage.textContent = message.textContent;
+    if (recordsTable) recordsTable.innerHTML = "";
   }
 
   async function startDashboardListeners(firebase, user) {
@@ -1168,7 +1325,7 @@
     } else {
       renderUserInvites([]);
     }
-    if ((isSuperAdmin() || isAdmin()) && firebase.listenOrders) {
+    if (hasPermission("ordersRead") && firebase.listenOrders) {
       dashboardUnsubscribers.push(firebase.listenOrders(renderOrders, renderOrdersError));
     } else {
       renderOrders([]);
@@ -1266,6 +1423,14 @@
       modal.className = "merchant-modal";
       modal.setAttribute("aria-hidden", "true");
       modal.innerHTML = `<div class="merchant-modal__overlay" data-close-merchant-modal></div><div class="merchant-modal__panel merchant-modal__panel--invite" role="dialog" aria-modal="true" aria-labelledby="merchantInviteTitle"><button class="merchant-modal__close" type="button" data-close-merchant-modal aria-label="關閉邀請用戶視窗">×</button><div data-merchant-invite-content></div></div>`;
+      document.body.appendChild(modal);
+    }
+    if (!document.querySelector("#merchantOrderModal")) {
+      const modal = document.createElement("div");
+      modal.id = "merchantOrderModal";
+      modal.className = "merchant-modal";
+      modal.setAttribute("aria-hidden", "true");
+      modal.innerHTML = `<div class="merchant-modal__overlay" data-close-merchant-modal></div><div class="merchant-modal__panel merchant-modal__panel--order" role="dialog" aria-modal="true" aria-labelledby="merchantOrderTitle"><button class="merchant-modal__close" type="button" data-close-merchant-modal aria-label="關閉訂單詳情視窗">×</button><div data-merchant-order-content></div></div>`;
       document.body.appendChild(modal);
     }
   }
@@ -1815,6 +1980,8 @@
     }
     const editUserButton = event.target.closest("[data-edit-user]");
     if (editUserButton) return openUserEditor(editUserButton.dataset.editUser);
+    const viewOrderButton = event.target.closest("[data-view-order]");
+    if (viewOrderButton) return openOrderDetails(viewOrderButton.dataset.viewOrder);
     const rolePermissionToggle = event.target.closest("[data-role-permission-toggle]");
     if (rolePermissionToggle) {
       return updateRolePermission(

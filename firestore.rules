@@ -103,7 +103,13 @@ service cloud.firestore {
     }
 
     function canReadSales() {
-      return isSuperAdmin() || isAdmin();
+      return isSuperAdmin()
+        || isAdmin()
+        || (
+          isStaff()
+          && rolePermissionsDocExists()
+          && settingsRoleFlag("ordersRead", "staff")
+        );
     }
 
     function validInvite(token, role) {
@@ -377,12 +383,13 @@ service cloud.firestore {
         && request.resource.data.status == "pending"
         && request.resource.data.paymentMethod == "credit_card"
         && request.resource.data.paymentStatus == "mock_paid"
+        && request.resource.data.cardLast4 is string
         && request.resource.data.createdAt == request.time
         && request.resource.data.keys().hasOnly([
           "orderNumber", "customerUid", "customerEmail", "customerName", "customerPhone",
           "recipientName", "recipientPhone", "deliveryMethod", "deliveryAddress",
           "items", "subtotal", "discount", "shippingFee", "extraFee", "total",
-          "paymentMethod", "paymentStatus", "status", "note", "createdAt"
+          "paymentMethod", "paymentStatus", "cardLast4", "status", "note", "createdAt"
         ]);
     }
 

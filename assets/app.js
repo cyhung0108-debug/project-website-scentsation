@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   const CART_KEY = "onlineShopCart";
   const CHECKOUT_DRAFT_KEY = "onlineShopCheckoutDraft";
   const LEGACY_USERS_KEY = "onlineShopUsers";
@@ -41,7 +41,7 @@
   }
 
   function formatDateTime(value) {
-    if (!value) return "未有資料";
+    if (!value) return "未提供";
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) return String(value);
     return date.toLocaleString("zh-HK", {
@@ -55,7 +55,7 @@
 
   function renderCurrencyText() {
     $$("[data-free-shipping-announcement]").forEach((node) => {
-      node.textContent = `滿 ${formatPrice(FREE_SHIPPING_THRESHOLD)} 免運`;
+      node.textContent = `滿 ${formatPrice(FREE_SHIPPING_THRESHOLD)} 免運費`;
     });
   }
 
@@ -79,7 +79,7 @@
     try {
       window.sessionStorage.setItem(AUTH_NOTICE_KEY, String(message || ""));
     } catch (error) {
-      console.warn("無法保存登入提示。", error);
+      console.warn("無法暫存登入提示", error);
     }
   }
 
@@ -90,7 +90,7 @@
       window.sessionStorage.removeItem(AUTH_NOTICE_KEY);
       showToast(message);
     } catch (error) {
-      console.warn("無法讀取登入提示。", error);
+      console.warn("無法顯示登入提示", error);
     }
   }
 
@@ -109,6 +109,15 @@
 
   function checkoutUrl() {
     return `${rootPrefix()}checkout.html`;
+  }
+
+  function orderConfirmationUrl(orderId) {
+    return `${rootPrefix()}order-confirmation.html?order=${encodeURIComponent(String(orderId || ""))}`;
+  }
+
+  function getOrderIdFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    return String(params.get("order") || "").trim();
   }
 
   function getProfileTabFromUrl() {
@@ -209,9 +218,9 @@
 
     return `
         <div class="product-gallery" data-product-gallery>
-          <div class="product-gallery__thumbs" aria-label="商品圖片導航">
+          <div class="product-gallery__thumbs" aria-label="商品圖片導覽">
             ${images.map((image, index) => `
-              <button class="thumb ${index === 0 ? "is-active" : ""}" type="button" data-scroll-to-image="${index}" aria-label="移動到商品圖片 ${index + 1}" aria-controls="product-image-${index}" aria-pressed="${index === 0 ? "true" : "false"}">
+              <button class="thumb ${index === 0 ? "is-active" : ""}" type="button" data-scroll-to-image="${index}" aria-label="顯示商品圖片 ${index + 1}" aria-controls="product-image-${index}" aria-pressed="${index === 0 ? "true" : "false"}">
                 <img src="${escapeHtml(image)}" alt="">
               </button>
             `).join("")}
@@ -318,7 +327,7 @@
     modal.innerHTML = `
       <div class="auth-modal__overlay" data-close-auth-modal></div>
       <div class="auth-modal__panel" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
-        <button class="auth-modal__close" type="button" data-close-auth-modal aria-label="關閉登入註冊視窗">×</button>
+        <button class="auth-modal__close" type="button" data-close-auth-modal aria-label="關閉登入 / 註冊視窗">×</button>
         <div class="auth-modal__content"></div>
       </div>
     `;
@@ -345,11 +354,11 @@
   }
 
   function currentUserLabel(user = state.currentUser) {
-    return user?.displayName || user?.email || "會員";
+    return user?.displayName || user?.email || "?";
   }
 
   function currentUserLabel(user = state.currentUser) {
-    return state.currentUserProfile?.displayName || user?.displayName || user?.email || "使用者";
+    return state.currentUserProfile?.displayName || user?.displayName || user?.email || "我的帳戶";
   }
 
   function updateAuthNav() {
@@ -384,9 +393,9 @@
 
     const rect = anchor.getBoundingClientRect();
     menu.innerHTML = `
-      <p>已登入</p>
+      <p>帳戶</p>
       <strong>${escapeHtml(currentUserLabel())}</strong>
-      <a href="${profileUrl("profile")}">個人資料</a>
+      <a href="${profileUrl("profile")}">我的帳戶</a>
       <a href="${profileUrl("orders")}">訂單記錄</a>
       <button type="button" data-auth-logout>登出</button>
     `;
@@ -399,7 +408,7 @@
 
   function getFirebaseService() {
     if (!window.onlineShopFirebaseReady) {
-      return Promise.reject(new Error("Firebase 尚未載入。"));
+      return Promise.reject(new Error("Firebase 服務尚未準備完成"));
     }
     return window.onlineShopFirebaseReady;
   }
@@ -418,22 +427,22 @@
   function firebaseAuthMessage(error) {
     const code = String(error?.code || "");
     const messages = {
-      "auth/email-already-in-use": "此電郵已經註冊，請直接登入。",
-      "auth/invalid-email": "請輸入有效的電郵地址。",
-      "auth/weak-password": "密碼至少需要 6 個字元。",
-      "auth/missing-password": "請輸入密碼。",
-      "auth/invalid-credential": "電郵或密碼不正確。",
-      "auth/user-not-found": "電郵或密碼不正確。",
-      "auth/wrong-password": "電郵或密碼不正確。",
-      "auth/popup-closed-by-user": "Google 登入視窗已關閉。",
-      "auth/popup-blocked": "瀏覽器已阻擋 Google 登入視窗，請允許彈出視窗後重試。",
-      "auth/unauthorized-domain": "目前網域尚未加入 Firebase 授權網域。",
-      "auth/operation-not-allowed": "此登入方式尚未在 Firebase Console 啟用。",
-      "auth/too-many-requests": "嘗試次數過多，請稍後再試。",
-      "auth/network-request-failed": "網絡連線失敗，請檢查連線後重試。",
-      "auth/operation-not-supported-in-this-environment": "請透過本地伺服器或正式網址開啟網站後再登入。"
+      "auth/email-already-in-use": "此電郵已被註冊",
+      "auth/invalid-email": "電郵格式不正確",
+      "auth/weak-password": "密碼至少需要 6 個字元",
+      "auth/missing-password": "請輸入密碼",
+      "auth/invalid-credential": "帳號或密碼不正確",
+      "auth/user-not-found": "帳號或密碼不正確",
+      "auth/wrong-password": "帳號或密碼不正確",
+      "auth/popup-closed-by-user": "Google 登入視窗已被關閉",
+      "auth/popup-blocked": "瀏覽器封鎖了 Google 登入視窗，請允許彈出視窗後再試",
+      "auth/unauthorized-domain": "此網域尚未加入 Firebase 授權網域",
+      "auth/operation-not-allowed": "請先在 Firebase Console 啟用此登入方式",
+      "auth/too-many-requests": "嘗試次數過多，請稍後再試",
+      "auth/network-request-failed": "網絡連線失敗，請檢查網絡後再試",
+      "auth/operation-not-supported-in-this-environment": "目前環境不支援這個登入方式"
     };
-    return messages[code] || "會員服務暫時無法完成操作，請稍後再試。";
+    return messages[code] || "登入失敗，請稍後再試";
   }
 
   function setAuthBusy(isBusy) {
@@ -464,6 +473,7 @@
           setCurrentUserFromFirebase(null);
           renderProfilePage();
           renderCheckoutPage();
+          renderOrderConfirmationPage();
           if (document.body?.dataset.page === "checkout") {
             window.location.replace(`${rootPrefix()}index.html?auth=login&redirect=checkout`);
             return;
@@ -590,6 +600,7 @@
 
         renderProfilePage();
         renderCheckoutPage();
+        renderOrderConfirmationPage();
       });
     } catch (error) {
       console.error("Firebase Authentication \u521d\u59cb\u5316\u5931\u6557\u3002", error);
@@ -622,12 +633,12 @@
     const socialText = state.authMode === "login" ? "登入" : "註冊 / 登入";
 
     return `
-      <p class="auth-field-label">請輸入你的電郵</p>
+      <p class="auth-field-label">請輸入你的帳戶資料</p>
       <label class="auth-input">
         <input class="auth-field-email" type="email" autocomplete="email" placeholder="電郵地址">
       </label>
       <label class="auth-input">
-        <input class="auth-field-password" type="password" autocomplete="${state.authMode === "login" ? "current-password" : "new-password"}" placeholder="密碼">
+        <input class="auth-field-password" type="password" autocomplete="${state.authMode === "login" ? "current-password" : "new-password"}" placeholder="撖Ⅳ">
       </label>
       ${state.authMode === "register" ? `
         <label class="auth-input">
@@ -637,27 +648,27 @@
         <button class="auth-text-button auth-forgot" type="button" data-auth-reset>忘記密碼？</button>
       `}
       <button class="auth-submit" type="button" data-auth-submit disabled>${submitText}</button>
-      <div class="auth-divider"><span>或一鍵登入</span></div>
+      <div class="auth-divider"><span>或使用以下方式</span></div>
       <button class="auth-social" type="button" data-auth-social="google">使用 Google ${socialText}</button>
     `;
   }
 
   function renderAuthModal() {
     ensureAuthModal();
-    const title = state.authMode === "login" ? "你好！歡迎回來。" : "註冊";
-    const switchText = state.authMode === "login" ? "新用戶？" : "已有帳號？";
+    const title = state.authMode === "login" ? "登入 / 註冊" : "建立帳戶";
+    const switchText = state.authMode === "login" ? "還沒有帳戶？" : "已經有帳戶？";
     const switchTarget = state.authMode === "login" ? "register" : "login";
-    const switchLabel = state.authMode === "login" ? "註冊" : "登入";
+    const switchLabel = state.authMode === "login" ? "建立帳戶" : "登入";
 
     $(".auth-modal__content").innerHTML = `
       <h2 id="authModalTitle">${title}</h2>
       <p class="auth-switch">${switchText}<button type="button" data-auth-mode="${switchTarget}">${switchLabel}</button></p>
-      ${state.authMode === "register" ? '<p class="auth-intro">成為會員即可獲取最新資訊及優惠！</p>' : ""}
+      ${state.authMode === "register" ? '<p class="auth-intro">建立帳戶後即可管理個人資料與查看訂單記錄。</p>' : ""}
       <div class="auth-form" data-auth-form>
         ${renderAuthFields()}
       </div>
       <p class="auth-message" aria-live="polite"></p>
-      <p class="auth-terms">繼續即代表你同意本店的 <a href="#terms">服務條款</a> 及 <a href="#privacy">私隱政策</a>。</p>
+      <p class="auth-terms">繼續即表示你同意我們的<a href="#terms">服務條款</a>及<a href="#privacy">私隱政策</a>。</p>
     `;
     updateAuthSubmitState();
   }
@@ -702,10 +713,10 @@
     const invite = await firebase.getUserInvite?.(state.authInviteToken);
     const normalizedEmail = String(email || "").trim().toLowerCase();
     if (!invite || invite.used || invite.status !== "pending") {
-      throw new Error("邀請連結已失效。");
+      throw new Error("邀請連結無效或已失效");
     }
     if (String(invite.email || "").trim().toLowerCase() !== normalizedEmail) {
-      throw new Error("註冊電郵與邀請電郵不相符。");
+      throw new Error("註冊電郵必須與邀請電郵一致");
     }
     state.authPendingInvite = invite;
     return invite;
@@ -715,13 +726,13 @@
     const email = $(".auth-field-email")?.value.trim();
     const password = $(".auth-field-password")?.value;
     const confirmPassword = $(".auth-field-confirm")?.value;
-    if (!email || !password || !confirmPassword) return setAuthMessage("請完整填寫電郵、密碼及確認密碼。", "error");
-    if (password !== confirmPassword) return setAuthMessage("兩次輸入的密碼不一致。", "error");
-    if (password.length < 6) return setAuthMessage("密碼長度至少需要 6 個字元。", "error");
+    if (!email || !password || !confirmPassword) return setAuthMessage("請填寫電郵、密碼及確認密碼", "error");
+    if (password !== confirmPassword) return setAuthMessage("兩次輸入的密碼不一致", "error");
+    if (password.length < 6) return setAuthMessage("密碼至少需要 6 個字元", "error");
 
     setAuthBusy(true);
     state.authPendingAction = "register";
-    setAuthMessage("正在建立帳戶…");
+    setAuthMessage("正在建立帳戶...");
     try {
       const firebase = await getFirebaseService();
       await validateInviteForEmail(firebase, email);
@@ -743,11 +754,11 @@
   async function handleLogin() {
     const email = $(".auth-field-email")?.value.trim();
     const password = $(".auth-field-password")?.value;
-    if (!email || !password) return setAuthMessage("請輸入電郵及密碼。", "error");
+    if (!email || !password) return setAuthMessage("請輸入電郵和密碼", "error");
 
     setAuthBusy(true);
     state.authPendingAction = "login";
-    setAuthMessage("正在登入…");
+    setAuthMessage("正在登入...");
     try {
       const firebase = await getFirebaseService();
       await firebase.signInWithEmailAndPassword(firebase.auth, email, password);
@@ -762,7 +773,7 @@
   async function handleGoogleAuth() {
     setAuthBusy(true);
     state.authPendingAction = "google";
-    setAuthMessage("正在啟動 Google 登入…");
+    setAuthMessage("正在使用 Google 登入...");
     try {
       const firebase = await getFirebaseService();
       const credential = await firebase.signInWithPopup(firebase.auth, firebase.googleProvider);
@@ -788,13 +799,13 @@
 
   async function handlePasswordReset() {
     const email = $(".auth-field-email")?.value.trim();
-    if (!email) return setAuthMessage("請先輸入需要重設密碼的電郵地址。", "error");
+    if (!email) return setAuthMessage("請輸入電郵以接收重設密碼連結", "error");
 
     setAuthBusy(true);
     try {
       const firebase = await getFirebaseService();
       await firebase.sendPasswordResetEmail(firebase.auth, email);
-      setAuthMessage("重設密碼電郵已發送，請檢查收件箱。", "success");
+      setAuthMessage("重設密碼電郵已送出，請檢查你的信箱", "success");
     } catch (error) {
       setAuthMessage(firebaseAuthMessage(error), "error");
     } finally {
@@ -807,7 +818,7 @@
       const firebase = await getFirebaseService();
       await firebase.signOut(firebase.auth);
       closeAccountMenu();
-      showToast("已登出。");
+      showToast("已登出");
     } catch (error) {
       closeAccountMenu();
       showToast(firebaseAuthMessage(error));
@@ -828,7 +839,7 @@
     const currentEmail = String(state.currentUserProfile?.email || state.currentUser?.email || "").trim();
     const saveButton = form.querySelector("[data-profile-save]");
     if (saveButton) saveButton.disabled = true;
-    setProfileSettingsMessage("正在儲存個人資料…");
+    setProfileSettingsMessage("正在儲存個人資料...");
     try {
       const firebase = await getFirebaseService();
       if (nextEmail && nextEmail !== currentEmail) {
@@ -841,7 +852,7 @@
         birthday: data.get("birthday"),
         gender: data.get("gender")
       });
-      setProfileSettingsMessage("個人資料已更新。", "success");
+      setProfileSettingsMessage("個人資料已更新", "success");
       showToast("個人資料已更新");
     } catch (error) {
       setProfileSettingsMessage(firebaseAuthMessage(error), "error");
@@ -883,7 +894,7 @@
     const product = findProduct(productId);
     const qty = Math.max(1, Number.parseInt(quantity, 10) || 1);
     if (!product) {
-      showToast("找不到此商品，無法加入購物車");
+      showToast("找不到商品，請重新整理頁面");
       return;
     }
     const stock = getProductStock(product);
@@ -936,7 +947,7 @@
     saveCart();
     renderCart();
     updateCartBadge();
-    showToast("購物車已清空");
+    showToast("購物車已更新");
   }
 
   function cartTotals() {
@@ -953,14 +964,40 @@
   }
 
   function loadCheckoutDraft() {
+    const defaults = {
+      customerName: "",
+      customerEmail: "",
+      customerPhone: "",
+      recipientName: "",
+      recipientPhone: "",
+      deliveryMethod: "pickup",
+      deliveryAddress: "",
+      sameAsCustomer: false,
+      note: ""
+    };
     try {
       const raw = window.localStorage.getItem(CHECKOUT_DRAFT_KEY);
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === "object" ? parsed : {};
+      if (!raw) return defaults;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return defaults;
+      }
+      return {
+        customerName: typeof parsed.customerName === "string" ? parsed.customerName : "",
+        customerEmail: typeof parsed.customerEmail === "string" ? parsed.customerEmail : "",
+        customerPhone: typeof parsed.customerPhone === "string" ? parsed.customerPhone : "",
+        recipientName: typeof parsed.recipientName === "string" ? parsed.recipientName : "",
+        recipientPhone: typeof parsed.recipientPhone === "string" ? parsed.recipientPhone : "",
+        deliveryMethod: parsed.deliveryMethod === "delivery" ? "delivery" : "pickup",
+        deliveryAddress: typeof parsed.deliveryAddress === "string" ? parsed.deliveryAddress : "",
+        sameAsCustomer: parsed.sameAsCustomer === true,
+        note: typeof parsed.note === "string" ? parsed.note : ""
+      };
     } catch (error) {
-      return {};
+      return defaults;
     }
   }
+
 
   function saveCheckoutDraft(updates = {}) {
     const draft = { ...loadCheckoutDraft(), ...updates };
@@ -970,6 +1007,10 @@
 
   function clearCheckoutDraft() {
     window.localStorage.removeItem(CHECKOUT_DRAFT_KEY);
+  }
+
+  function removeCartDrawerNotes() {
+    $$("#cart-drawer textarea").forEach((textarea) => textarea.remove());
   }
 
   function getCartLineItems() {
@@ -1068,13 +1109,13 @@
                   <button type="button" data-cart-action="increase" data-product-id="${escapeHtml(item.productId)}">+</button>
                 </div>
                 <p class="cart-page-item__subtotal">${formatPrice(item.subtotal)}</p>
-                <button class="cart-page-item__remove" type="button" data-cart-action="remove" data-product-id="${escapeHtml(item.productId)}">刪除</button>
+                <button class="cart-page-item__remove" type="button" data-cart-action="remove" data-product-id="${escapeHtml(item.productId)}">移除</button>
               </article>
             `).join("")}
           </div>
           <label class="checkout-note">
             <span>訂單備註</span>
-            <textarea rows="5" data-checkout-note placeholder="如有送禮、包裝或其他備註，請在這裡填寫。">${escapeHtml(draft.note || "")}</textarea>
+            <textarea rows="5" data-checkout-note placeholder="可填寫送貨或包裝備註，稍後會一併帶到結帳頁">${escapeHtml(draft.note || "")}</textarea>
           </label>
         </div>
         <aside class="cart-page__summary">
@@ -1109,22 +1150,32 @@
   function generateOrderNumber() {
     const now = new Date();
     const datePart = now.toISOString().slice(0, 10).replace(/-/g, "");
-    return `SC${datePart}${String(now.getTime()).slice(-6)}`;
+    const timePart = now.toTimeString().slice(0, 8).replace(/:/g, "");
+    const randomPart = Math.random().toString(36).slice(2, 6).toUpperCase();
+    return `ORD-${datePart}-${timePart}-${randomPart}`;
+  }
+
+  function checkoutDeliveryLabel(value) {
+    return value === "delivery" ? "送貨上門" : "到店自取";
+  }
+
+  function checkoutPaymentStatusLabel(value) {
+    return value === "mock_paid" ? "模擬付款成功" : String(value || "未付款");
   }
 
   function renderOrderConfirmation(order) {
-    const container = $("[data-checkout-page]");
+    const container = $("[data-checkout-page]") || $("[data-order-confirmation-page]");
     if (!container || !order) return;
     container.innerHTML = `
       ${renderCheckoutSteps("confirm")}
       <section class="checkout-confirmation">
-        <h1>訂單已確認</h1>
-        <p>多謝你的訂購，我們已收到你的訂單。</p>
+        <h1>訂單確認</h1>
+        <p>感謝你的訂購，以下是本次訂單資料。</p>
         <div class="checkout-confirmation__details">
           <p><span>訂單編號</span><strong>${escapeHtml(order.orderNumber)}</strong></p>
           <p><span>合計金額</span><strong>${formatPrice(order.total)}</strong></p>
           <p><span>收件人</span><strong>${escapeHtml(order.recipientName)}</strong></p>
-          <p><span>聯絡電話</span><strong>${escapeHtml(order.recipientPhone)}</strong></p>
+          <p><span>收件人電話</span><strong>${escapeHtml(order.recipientPhone)}</strong></p>
           <p><span>收貨方式</span><strong>${order.deliveryMethod === "delivery" ? "送貨上門" : "到店自取"}</strong></p>
           ${order.deliveryMethod === "delivery" ? `<p><span>收貨地址</span><strong>${escapeHtml(order.deliveryAddress)}</strong></p>` : ""}
           <p><span>付款方式</span><strong>信用卡</strong></p>
@@ -1135,6 +1186,131 @@
         </div>
       </section>
     `;
+  }
+
+  function renderOrderConfirmation(order) {
+    const container = $("[data-checkout-page]") || $("[data-order-confirmation-page]");
+    if (!container || !order) return;
+    const items = Array.isArray(order.items) ? order.items : [];
+    container.innerHTML = `
+      ${renderCheckoutSteps("confirm")}
+      <section class="checkout-confirmation">
+        <h1>訂單確認</h1>
+        <p>感謝你的訂購，以下是本次訂單資料。</p>
+        <div class="checkout-confirmation__grid">
+          <section>
+            <h2>訂單資料</h2>
+            <p class="checkout-confirmation__row"><span>訂單編號</span><strong>${escapeHtml(order.orderNumber)}</strong></p>
+            <p class="checkout-confirmation__row"><span>下單時間</span><strong>${escapeHtml(formatDateTime(order.createdAt || new Date()))}</strong></p>
+            <p class="checkout-confirmation__row"><span>訂單狀態</span><strong>待處理</strong></p>
+          </section>
+          <section>
+            <h2>顧客資料</h2>
+            <p class="checkout-confirmation__row"><span>顧客名稱</span><strong>${escapeHtml(order.customerName)}</strong></p>
+            <p class="checkout-confirmation__row"><span>電郵</span><strong>${escapeHtml(order.customerEmail)}</strong></p>
+            <p class="checkout-confirmation__row"><span>電話</span><strong>${escapeHtml(order.customerPhone)}</strong></p>
+          </section>
+          <section>
+            <h2>收件人資料</h2>
+            <p class="checkout-confirmation__row"><span>收件人</span><strong>${escapeHtml(order.recipientName)}</strong></p>
+            <p class="checkout-confirmation__row"><span>收件人電話</span><strong>${escapeHtml(order.recipientPhone)}</strong></p>
+            <p class="checkout-confirmation__row"><span>收貨方式</span><strong>${escapeHtml(checkoutDeliveryLabel(order.deliveryMethod))}</strong></p>
+            ${order.deliveryMethod === "delivery" ? `<p class="checkout-confirmation__row"><span>收貨地址</span><strong>${escapeHtml(order.deliveryAddress)}</strong></p>` : ""}
+          </section>
+          <section>
+            <h2>付款資料</h2>
+            <p class="checkout-confirmation__row"><span>付款方式</span><strong>信用卡</strong></p>
+            <p class="checkout-confirmation__row"><span>付款狀態</span><strong>${escapeHtml(checkoutPaymentStatusLabel(order.paymentStatus))}</strong></p>
+            ${order.cardLast4 ? `<p class="checkout-confirmation__row"><span>卡號末四位</span><strong>**** ${escapeHtml(order.cardLast4)}</strong></p>` : ""}
+          </section>
+        </div>
+        <section class="checkout-confirmation__items">
+          <h2>購買商品</h2>
+          ${items.map((item) => `
+            <article>
+              <span>${escapeHtml(item.name)}</span>
+              <span>x ${Number(item.quantity || 0)}</span>
+              <strong>${formatPrice(item.subtotal)}</strong>
+            </article>
+          `).join("")}
+        </section>
+        <section class="checkout-confirmation__totals">
+          <h2>價錢明細</h2>
+          <p class="checkout-confirmation__row"><span>商品小計</span><strong>${formatPrice(order.subtotal)}</strong></p>
+          <p class="checkout-confirmation__row"><span>優惠扣減</span><strong>-${formatPrice(order.discount)}</strong></p>
+          <p class="checkout-confirmation__row"><span>運費</span><strong>${formatPrice(order.shippingFee)}</strong></p>
+          <p class="checkout-confirmation__row"><span>附加費</span><strong>${formatPrice(order.extraFee)}</strong></p>
+          <p class="checkout-confirmation__row checkout-page__total"><span>合計</span><strong>${formatPrice(order.total)}</strong></p>
+        </section>
+        ${order.note ? `<section class="checkout-confirmation__note"><h2>訂單備註</h2><p>${textToHtml(order.note)}</p></section>` : ""}
+        <div class="checkout-confirmation__actions">
+          <a class="checkout-secondary-button" href="${homeUrl()}">返回首頁</a>
+          <a class="checkout-button" href="${profileUrl("orders")}">查看我的訂單</a>
+        </div>
+      </section>
+    `;
+  }
+
+  function checkoutPaymentStatusLabel(value) {
+    return value === "mock_paid" ? "模擬付款成功" : String(value || "未付款");
+  }
+
+  function renderOrderConfirmationError(message) {
+    const container = $("[data-order-confirmation-page]");
+    if (!container) return;
+    container.innerHTML = `
+      ${renderCheckoutSteps("confirm")}
+      <section class="checkout-confirmation">
+        <h1>訂單確認</h1>
+        <p class="checkout-message" data-type="error">${escapeHtml(message)}</p>
+        <div class="checkout-confirmation__actions">
+          <a class="checkout-secondary-button" href="${homeUrl()}">返回首頁</a>
+          <a class="checkout-button" href="${cartUrl()}">返回購物車</a>
+        </div>
+      </section>
+    `;
+  }
+
+  async function renderOrderConfirmationPage() {
+    const container = $("[data-order-confirmation-page]");
+    if (!container) return;
+    const orderId = getOrderIdFromUrl();
+    if (!orderId) {
+      renderOrderConfirmationError("找不到訂單資料。");
+      return;
+    }
+    if (!state.currentUser) {
+      container.innerHTML = `
+        ${renderCheckoutSteps("confirm")}
+        <section class="checkout-confirmation">
+          <h1>訂單確認</h1>
+          <p>請先登入，然後再查看訂單確認資料。</p>
+          <div class="checkout-confirmation__actions">
+            <a class="checkout-button" href="${rootPrefix()}index.html?auth=login">登入 / 註冊</a>
+            <a class="checkout-secondary-button" href="${homeUrl()}">返回首頁</a>
+          </div>
+        </section>
+      `;
+      return;
+    }
+    container.innerHTML = `
+      ${renderCheckoutSteps("confirm")}
+      <section class="checkout-confirmation">
+        <h1>訂單確認</h1>
+        <p>正在讀取訂單資料...</p>
+      </section>
+    `;
+    try {
+      const firebase = await getFirebaseService();
+      const order = await firebase.getOrder(orderId);
+      if (!order) {
+        renderOrderConfirmationError("找不到訂單，或你沒有權限查看此訂單。");
+        return;
+      }
+      renderOrderConfirmation(order);
+    } catch (error) {
+      renderOrderConfirmationError(checkoutErrorMessage(error));
+    }
   }
 
   function renderCheckoutPage() {
@@ -1152,7 +1328,7 @@
         ${renderCheckoutSteps("details")}
         <section class="checkout-page checkout-page--empty">
           <h1>請先登入</h1>
-          <p>提交訂單前需要登入帳戶。</p>
+          <p>提交訂單前請先登入你的帳戶。</p>
           <a class="checkout-button" href="${rootPrefix()}index.html?auth=login&redirect=checkout">登入 / 註冊</a>
         </section>
       `;
@@ -1193,11 +1369,17 @@
           </section>
           <section class="checkout-section">
             <h2>訂單備註</h2>
-            <textarea name="note" rows="4" data-checkout-note placeholder="如有其他備註，請在這裡填寫。">${escapeHtml(defaults.note)}</textarea>
+            <textarea name="note" rows="4" data-checkout-note placeholder="可填寫送貨、包裝或其他備註">${escapeHtml(defaults.note)}</textarea>
           </section>
           <section class="checkout-section">
             <h2>付款方式</h2>
             <label class="checkout-radio"><input type="radio" checked disabled>信用卡</label>
+            <div class="checkout-card-grid">
+              <label>卡號<input type="text" name="cardNumber" inputmode="numeric" autocomplete="cc-number" placeholder="0000 0000 0000 0000" required></label>
+              <label>到期日<input type="text" name="cardExpiry" autocomplete="cc-exp" placeholder="MM/YY" required></label>
+              <label>安全碼<input type="password" name="cardCvc" inputmode="numeric" autocomplete="cc-csc" placeholder="CVC" required></label>
+            </div>
+            <p class="checkout-helper-text">這是模擬付款流程，不會真的扣款，也不會保存完整卡號或安全碼。</p>
           </section>
         </div>
         <aside class="checkout-page__summary">
@@ -1229,6 +1411,7 @@
     const customerName = String(formData.get("customerName") || "").trim();
     const customerEmail = String(formData.get("customerEmail") || "").trim();
     const customerPhone = String(formData.get("customerPhone") || "").trim();
+    const cardNumber = String(formData.get("cardNumber") || "").replace(/\D/g, "");
     return {
       customerName,
       customerEmail,
@@ -1240,7 +1423,8 @@
       deliveryAddress: sameAsCustomer
         ? String(state.currentUserProfile?.address || formData.get("deliveryAddress") || "").trim()
         : String(formData.get("deliveryAddress") || "").trim(),
-      note: String(formData.get("note") || "").trim()
+      note: String(formData.get("note") || "").trim(),
+      cardLast4: cardNumber.slice(-4)
     };
   }
 
@@ -1249,6 +1433,13 @@
     if (!node) return;
     node.textContent = message;
     node.dataset.type = type;
+  }
+
+  function checkoutErrorMessage(error) {
+    const code = String(error?.code || "");
+    if (code.includes("permission-denied")) return "訂單提交失敗：目前 Firestore 權限不允許建立訂單。";
+    if (code.includes("unavailable")) return "訂單提交失敗：暫時無法連線到資料庫，請稍後再試。";
+    return String(error?.message || "訂單提交失敗，請稍後再試。");
   }
 
   async function handleCheckoutSubmit(form) {
@@ -1261,24 +1452,24 @@
     saveCheckoutDraft(payload);
     const totals = checkoutTotals(payload);
     if (!totals.items.length) {
-      setCheckoutMessage("購物車暫時沒有商品。", "error");
+      setCheckoutMessage("購物車暫時沒有商品", "error");
       return;
     }
     if (!payload.customerName || !payload.customerEmail || !payload.customerPhone) {
-      setCheckoutMessage("請填寫顧客名稱、電郵和電話。", "error");
+      setCheckoutMessage("請填寫完整顧客資料", "error");
       return;
     }
     if (!payload.recipientName || !payload.recipientPhone) {
-      setCheckoutMessage("請填寫收件人名稱和聯絡電話。", "error");
+      setCheckoutMessage("請填寫完整收件人資料", "error");
       return;
     }
     if (payload.deliveryMethod === "delivery" && !payload.deliveryAddress) {
-      setCheckoutMessage("送貨上門需要填寫收貨地址。", "error");
+      setCheckoutMessage("送貨上門必須填寫收貨地址", "error");
       return;
     }
     try {
       if (submitButton) submitButton.disabled = true;
-      setCheckoutMessage("正在提交訂單…");
+      setCheckoutMessage("正在提交訂單...");
       const firebase = await getFirebaseService();
       const orderData = {
         orderNumber: generateOrderNumber(),
@@ -1298,31 +1489,32 @@
         total: totals.total,
         paymentMethod: "credit_card",
         paymentStatus: "mock_paid",
+        cardLast4: payload.cardLast4,
         status: "pending",
         note: payload.note
       };
       const createdOrder = await firebase.createOrder(orderData);
-      state.orderConfirmation = { ...orderData, id: createdOrder.id };
+      state.orderConfirmation = { ...orderData, id: createdOrder.id, createdAt: new Date().toISOString() };
       state.cart = [];
       saveCart();
       clearCheckoutDraft();
       renderCart();
       updateCartBadge();
-      renderOrderConfirmation(state.orderConfirmation);
-      showToast("訂單已建立。");
+      window.location.href = orderConfirmationUrl(createdOrder.id);
     } catch (error) {
-      setCheckoutMessage(firebaseAuthMessage(error), "error");
+      setCheckoutMessage(checkoutErrorMessage(error), "error");
     } finally {
       if (submitButton) submitButton.disabled = false;
     }
   }
 
   function renderCart() {
+    removeCartDrawerNotes();
     const totals = cartTotals();
 
     $$(".cart-items").forEach((container) => {
       if (!state.cart.length) {
-        container.innerHTML = '<p class="empty-cart">你的購物車目前是空的</p>';
+        container.innerHTML = '<p class="empty-cart">購物車暫時沒有商品</p>';
         return;
       }
 
@@ -1366,8 +1558,8 @@
     $$(".shipping-progress").forEach((node) => {
       const remaining = Math.max(0, FREE_SHIPPING_THRESHOLD - totals.amount);
       node.textContent = remaining > 0
-        ? `再消費 ${formatPrice(remaining)} 即享免運`
-        : "此訂單已符合免運門檻";
+        ? `再買 ${formatPrice(remaining)} 即享免運費`
+        : "已達免運門檻";
     });
     refreshCheckoutSurfaces();
   }
@@ -1384,7 +1576,7 @@
     });
   }
 
-  function renderProductGrid(items = products, targetGrid = null, emptyMessage = "沒有符合篩選條件的商品") {
+  function renderProductGrid(items = products, targetGrid = null, emptyMessage = "沒有符合條件的商品") {
     const grid = targetGrid || $("[data-products-grid]");
     if (!grid) return;
 
@@ -1393,7 +1585,7 @@
       return;
     }
 
-    // 所有符合目前條件的商品一次顯示，不進行分頁或截取。
+    // ??泵???隞嗥???銝甈⊿＊蝷綽?銝脰??????
     grid.innerHTML = items
       .map((product) => {
         const index = products.findIndex((item) => item.id === product.id);
@@ -1406,7 +1598,7 @@
             <img class="product-card__image product-card__image--primary" src="${escapeHtml(primaryImage)}" alt="${escapeHtml(product.name)}">
             <img class="product-card__image product-card__image--secondary" src="${escapeHtml(secondaryImage)}" alt="${escapeHtml(product.name)} 第二張圖片">
           </a>
-          <button class="quick-add" type="button" data-add-cart data-product-id="${product.id}" aria-label="將 ${escapeHtml(product.name)} 加入購物車" ${stock <= 0 ? "disabled" : ""}>${stock <= 0 ? "缺貨" : "加入購物車"}</button>
+          <button class="quick-add" type="button" data-add-cart data-product-id="${product.id}" aria-label="加入 ${escapeHtml(product.name)} 到購物車" ${stock <= 0 ? "disabled" : ""}>${stock <= 0 ? "缺貨" : "加入購物車"}</button>
           <a class="product-title" href="${productUrl(product.id)}">${escapeHtml(product.name)}</a>
           <p class="price">${formatPrice(product.price)}</p>
         </article>
@@ -1427,7 +1619,7 @@
         <button class="search-modal__close" type="button" data-close-search-modal aria-label="關閉搜尋視窗">×</button>
         <h2 id="searchModalTitle">搜尋商品</h2>
         <div class="search-modal__input-wrap">
-          <input id="searchInput" type="search" placeholder="請輸入商品名稱或關鍵字" autocomplete="off">
+          <input id="searchInput" type="search" placeholder="輸入關鍵字搜尋商品" autocomplete="off">
         </div>
         <div id="searchResults" class="search-modal__results" aria-live="polite"></div>
       </div>
@@ -1462,7 +1654,7 @@
     const query = String(keyword || "").trim();
 
     if (!query) {
-      container.innerHTML = '<p class="search-modal__empty">請輸入商品名稱或關鍵字</p>';
+      container.innerHTML = '<p class="search-modal__empty">請輸入關鍵字開始搜尋</p>';
       return;
     }
 
@@ -1530,8 +1722,8 @@
       document.title = "找不到商品 - APOTHEKE";
       container.innerHTML = `
         <section class="product-not-found">
-          <h1>找不到此商品</h1>
-          <p>此商品可能已下架，或商品連結有誤。</p>
+          <h1>找不到商品</h1>
+          <p>找不到你想查看的商品，請返回商品列表重新選擇。</p>
           <a class="return-link" href="${listUrl()}">返回商品列表</a>
         </section>
       `;
@@ -1549,14 +1741,14 @@
       <section class="product-main">
         ${renderProductImageStack(product)}
 
-        <aside class="product-info" aria-label="商品購買資訊">
+        <aside class="product-info" aria-label="商品資料區">
           <a class="return-link product-return" href="${listUrl()}">返回商品列表</a>
           <h1>${escapeHtml(product.name)}</h1>
           <p class="product-price">${formatPrice(product.price)}</p>
           <p class="product-intro">${escapeHtml(descriptions[0] || "")}</p>
 
           ${detailParagraphs.length ? `<section class="accordion product-accordion is-open">
-            <button type="button" aria-expanded="true" class="accordion-toggle">商品詳情 / 規格</button>
+            <button type="button" aria-expanded="true" class="accordion-toggle">商品詳情 / 規格說明</button>
             <div class="accordion-content">
               <ul>
                 ${detailParagraphs.map((paragraph) => `<li>${escapeHtml(paragraph)}</li>`).join("")}
@@ -1577,10 +1769,10 @@
             <button class="add-cart-button" type="button" data-add-cart data-product-id="${product.id}" data-quantity-input="product-quantity" ${stock <= 0 ? "disabled" : ""}>${stock <= 0 ? "缺貨" : "加入購物車"}</button>
           </div>
 
-          <p class="installment">滿 <strong>${formatPrice(FREE_SHIPPING_THRESHOLD)}</strong> 即享免運<br><a href="#learn-more">了解更多</a></p>
+          <p class="installment">滿 <strong>${formatPrice(FREE_SHIPPING_THRESHOLD)}</strong> 即享免運費<br><a href="#learn-more">了解更多</a></p>
 
           ${promotionNotice || pointsNotice ? `
-            <div class="product-perks" aria-label="商品優惠與會員積分">
+            <div class="product-perks" aria-label="商品優惠與提醒">
               ${promotionNotice ? `<p><span class="perk-icon box"></span>${escapeHtml(promotionNotice)}</p>` : ""}
               ${pointsNotice ? `<p><span class="perk-icon medal"></span>${escapeHtml(pointsNotice)}</p>` : ""}
             </div>
@@ -1591,18 +1783,18 @@
       <section class="details-strip">
         <article>
           <span class="detail-icon clock"></span>
-          <h2>香氣時長</h2>
-          <p>${escapeHtml(detailParagraphs[0] || descriptions[0] || "商戶可自行修改商品規格")}</p>
+          <h2>商品簡介</h2>
+          <p>${escapeHtml(detailParagraphs[0] || descriptions[0] || "暫時未有商品描述")}</p>
         </article>
         <article>
           <span class="detail-icon leaf"></span>
-          <h2>精緻配方</h2>
-          <p>以居家使用情境設計，商品描述與規格皆可由商戶自行維護。</p>
+          <h2>使用建議</h2>
+          <p>可根據空間大小與個人喜好調整使用方式，讓香氣自然融入日常生活。</p>
         </article>
         <article>
           <span class="detail-icon map"></span>
-          <h2>商店選品</h2>
-          <p>圖片、價格、庫存與文字皆集中於商品資料中，方便後續接後端。</p>
+          <h2>商品資訊</h2>
+          <p>圖片、尺寸與商品資料會按商戶設定更新，購買前可先查看商品詳情與備註說明。</p>
         </article>
       </section>
     `;
@@ -1617,8 +1809,8 @@
     container.innerHTML = `
       <section class="info-page">
         <h1>${escapeHtml(about.title || "關於我們")}</h1>
-        <h2>${escapeHtml(about.companyName || "你的公司名稱")}</h2>
-        <p class="info-intro">${textToHtml(about.intro || "請在 assets/site-config.js 填寫公司簡介。")}</p>
+        <h2>${escapeHtml(about.companyName || "品牌資訊")}</h2>
+        <p class="info-intro">${textToHtml(about.intro || "請在 assets/site-config.js 補上品牌介紹內容。")}</p>
         <div class="info-sections">
           ${(about.sections || []).map((section) => `
             <article>
@@ -1643,11 +1835,11 @@
         <div class="contact-layout">
           <div class="contact-details">
             <article>
-              <h2>店鋪地址</h2>
-              <p>${textToHtml(contact.address || "請在這裡填寫店鋪地址")}</p>
+              <h2>店舖地址</h2>
+              <p>${textToHtml(contact.address || "請在這裡填寫店舖地址")}</p>
             </article>
             <article>
-              <h2>開店時間</h2>
+              <h2>營業時間</h2>
               <p>${textToHtml(contact.openingHours || "星期一至日 11:00 - 20:00")}</p>
             </article>
             <article>
@@ -1655,14 +1847,14 @@
               <p>${textToHtml(contact.phone || "+852 0000 0000")}</p>
             </article>
             <article>
-              <h2>其他資料</h2>
-              <p>${textToHtml(contact.other || "請在這裡填寫其他聯絡資料。")}</p>
+              <h2>其他資訊</h2>
+              <p>${textToHtml(contact.other || "請在設定中補上其他聯絡資訊。")}</p>
             </article>
           </div>
           <div class="map-panel">
             ${mapUrl
               ? `<iframe src="${escapeHtml(mapUrl)}" loading="lazy" allowfullscreen referrerpolicy="no-referrer-when-downgrade" title="Google Map"></iframe>`
-              : `<div class="map-placeholder">請在後台設定 Google Map 連結</div>`}
+              : `<div class="map-placeholder">請在設定中填入 Google Map 嵌入連結</div>`}
           </div>
         </div>
       </section>
@@ -1682,7 +1874,7 @@
       completed: "已完成",
       cancelled: "已取消"
     };
-    return labels[order?.status] || order?.status || "未有狀態";
+    return labels[order?.status] || order?.status || "未知";
   }
 
   function renderProfilePage() {
@@ -1694,14 +1886,14 @@
     const currentTab = getProfileTabFromUrl();
     const providerId = String(profile.providerId || currentUser?.providerId || "password");
     const providerLabel = providerId === "google.com" ? "Google" : providerId === "password" ? "電郵 / 密碼" : providerId;
-    document.title = "個人資料 - APOTHEKE";
+    document.title = "我的帳戶 - APOTHEKE";
 
     if (!currentUser) {
       container.innerHTML = `
         <section class="profile-page profile-page--empty">
           <div class="profile-empty">
-            <h1>個人資料</h1>
-            <p>請先登入後再查看你的帳戶資料。</p>
+            <h1>我的帳戶</h1>
+            <p>請先登入以查看你的帳戶資料。</p>
           </div>
         </section>
       `;
@@ -1753,7 +1945,7 @@
                   <article class="profile-order-card">
                     <div>
                       <span>訂單編號</span>
-                      <strong>${escapeHtml(order.orderNumber || order.id || "未有訂單編號")}</strong>
+                      <strong>${escapeHtml(order.orderNumber || order.id || "未提供訂單編號")}</strong>
                     </div>
                     <div>
                       <span>狀態</span>
@@ -1764,12 +1956,12 @@
                       <strong>${escapeHtml(formatPrice(profileOrderAmount(order)))}</strong>
                     </div>
                     <div>
-                      <span>建立時間</span>
+                      <span>下單時間</span>
                       <strong>${escapeHtml(formatDateTime(order.createdAt))}</strong>
                     </div>
                     <div class="profile-order-card__note">
                       <span>商戶備註</span>
-                      <p>${escapeHtml(order.merchantNote || "未有備註")}</p>
+                      <p>${escapeHtml(order.merchantNote || "暫無備註")}</p>
                     </div>
                   </article>
                 `).join("")}
@@ -1800,8 +1992,8 @@
 
     const type = document.body.dataset.policyType || container.dataset.policyType || "";
     const policy = siteConfig.policies?.[type];
-    const title = policy?.title || "商店政策";
-    const content = policy?.content || "請在 assets/site-config.js 填寫此政策內容。";
+    const title = policy?.title || "政策內容";
+    const content = policy?.content || "請在 assets/site-config.js 補上政策內容。";
     document.title = `${title} - APOTHEKE`;
     container.innerHTML = `
       <section class="info-page policy-page">
@@ -1820,15 +2012,15 @@
     const featuredProducts = products.filter((product) => product.showOnHome === true).slice(0, maxProducts);
     const bannerImage = `${rootPrefix()}${home.bannerImage || "assets/images/banner.jpg"}`;
     container.innerHTML = `
-      <section class="home-banner" aria-label="${escapeHtml(home.bannerAlt || "店舖 Banner")}">
-        <img src="${escapeHtml(bannerImage)}" alt="${escapeHtml(home.bannerAlt || "APOTHEKE 店舖")}">
+      <section class="home-banner" aria-label="${escapeHtml(home.bannerAlt || "首頁 Banner")}">
+        <img src="${escapeHtml(bannerImage)}" alt="${escapeHtml(home.bannerAlt || "APOTHEKE 首頁 Banner")}">
       </section>
       <section class="home-products" aria-labelledby="homeProductsTitle">
-        <h1 id="homeProductsTitle">${escapeHtml(home.productsTitle || "熱門商品")}</h1>
-        <div class="product-grid home-products__grid" data-home-products-grid aria-label="首頁推薦商品"></div>
+        <h1 id="homeProductsTitle">${escapeHtml(home.productsTitle || "精選商品")}</h1>
+        <div class="product-grid home-products__grid" data-home-products-grid aria-label="首頁商品列表"></div>
       </section>
     `;
-    renderProductGrid(featuredProducts, $("[data-home-products-grid]", container), "暫時沒有推薦商品");
+    renderProductGrid(featuredProducts, $("[data-home-products-grid]", container), "暫時沒有精選商品");
   }
 
   function renderSiteFooter() {
@@ -1838,13 +2030,13 @@
     const logoText = $(".brand")?.textContent.trim() || "APOTHEKE";
     const phone = String(contact.phone || "+852 0000 0000").trim();
     const phoneHref = phone.replace(/[^+\d]/g, "");
-    const address = contact.address || "請在這裡填寫店鋪地址";
+    const address = contact.address || "請在這裡填寫店舖地址";
     const footer = document.createElement("footer");
     footer.className = "site-footer";
     footer.dataset.siteFooter = "";
     footer.innerHTML = `
       <div class="site-footer__inner">
-        <a class="site-footer__brand" href="${homeUrl()}" aria-label="${escapeHtml(logoText)} 首頁">${escapeHtml(logoText)}</a>
+        <a class="site-footer__brand" href="${homeUrl()}" aria-label="${escapeHtml(logoText)} 返回首頁">${escapeHtml(logoText)}</a>
         <div>
           <span class="site-footer__label">聯絡電話</span>
           ${phoneHref
@@ -1852,7 +2044,7 @@
             : `<span class="site-footer__value">${escapeHtml(phone)}</span>`}
         </div>
         <div>
-          <span class="site-footer__label">店鋪地址</span>
+          <span class="site-footer__label">店舖地址</span>
           <address>${textToHtml(address)}</address>
         </div>
       </div>
@@ -1897,7 +2089,7 @@
         <div class="filter-content">
           <label class="filter-sort">
             <select data-sort-products aria-label="商品排序">
-              <option value="relevant">預設排序</option>
+              <option value="relevant">相關排序</option>
               <option value="best">精選商品</option>
               <option value="az">名稱 A-Z</option>
               <option value="za">名稱 Z-A</option>
@@ -1917,8 +2109,8 @@
           <div class="price-range" data-price-range>
             <span class="price-range__track"></span>
             <span class="price-range__selected"></span>
-            <input type="range" step="1" data-price-range-min aria-label="調整最低價格">
-            <input type="range" step="1" data-price-range-max aria-label="調整最高價格">
+            <input type="range" step="1" data-price-range-min aria-label="價格最低滑桿">
+            <input type="range" step="1" data-price-range-max aria-label="價格最高滑桿">
           </div>
         </div>
       </section>
@@ -1926,7 +2118,7 @@
         <button class="filter-section-toggle" type="button" aria-expanded="true">庫存狀態</button>
         <div class="filter-content filter-options">
           <label><input type="checkbox" value="in-stock" data-filter-stock-status><span></span>有存貨</label>
-          <label><input type="checkbox" value="out-of-stock" data-filter-stock-status><span></span>缺貨</label>
+          <label><input type="checkbox" value="out-of-stock" data-filter-stock-status><span></span>蝻箄疏</label>
         </div>
       </section>
       <section class="filter-section is-open">
@@ -1937,7 +2129,7 @@
         </div>
       </section>
       <section class="filter-section filter-section--category-group is-open">
-        <button class="filter-section-toggle" type="button" aria-expanded="true">類別</button>
+        <button class="filter-section-toggle" type="button" aria-expanded="true">憿</button>
         <div class="filter-content filter-category-groups">
           ${categories.map((category) => {
             const hasSubcategories = category.subcategories.length > 0;
@@ -2138,7 +2330,7 @@
     state.priceMax = state.priceLimit;
     syncPriceFilterControls();
     applyFilters();
-    showToast("篩選條件已套用");
+    showToast("篩選條件已清除");
   }
 
   function refreshProductViews() {
@@ -2165,7 +2357,7 @@
     const source = $(".filters-sidebar");
     if (!source) return;
     drawer.innerHTML = `
-      <button class="drawer-close" type="button" data-close-drawer aria-label="關閉篩選">x</button>
+      <button class="drawer-close" type="button" data-close-drawer aria-label="??蝭拚">x</button>
       ${source.innerHTML}
     `;
     drawer.dataset.ready = "true";
@@ -2277,10 +2469,17 @@
       return;
     }
 
-    if (event.target.closest("[data-go-checkout], #cart-drawer .checkout-button")) {
+    if (event.target.closest("#cart-drawer .checkout-button")) {
+      event.preventDefault();
+      closeDrawer();
+      window.location.href = cartUrl();
+      return;
+    }
+
+    if (event.target.closest("[data-go-checkout]")) {
       event.preventDefault();
       if (!state.cart.length) {
-        showToast("購物車暫時沒有商品。");
+        showToast("購物車暫時沒有商品");
         return;
       }
       closeDrawer();
@@ -2433,6 +2632,7 @@
   window.renderProfilePage = renderProfilePage;
   window.renderCartPage = renderCartPage;
   window.renderCheckoutPage = renderCheckoutPage;
+  window.renderOrderConfirmationPage = renderOrderConfirmationPage;
   window.renderPolicyPage = renderPolicyPage;
   window.renderSiteFooter = renderSiteFooter;
   window.openSearchModal = openSearchModal;
@@ -2468,6 +2668,7 @@
   renderProfilePage();
   renderCartPage();
   renderCheckoutPage();
+  renderOrderConfirmationPage();
   renderProductDetail();
   renderAboutPage();
   renderContactPage();
