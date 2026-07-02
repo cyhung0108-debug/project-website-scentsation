@@ -14,11 +14,26 @@
       import(`${sdkBaseUrl}/firebase-firestore.js`),
       import(`${sdkBaseUrl}/firebase-storage.js`)
     ]);
+    let functionsSdk = null;
+    try {
+      functionsSdk = await import(`${sdkBaseUrl}/firebase-functions.js`);
+    } catch (error) {
+      console.warn("Firebase Functions SDK is unavailable; payment will use mock fallback.", {
+        code: error?.code,
+        message: error?.message
+      });
+    }
 
     const app = appSdk.getApps().length ? appSdk.getApp() : appSdk.initializeApp(config);
     const auth = authSdk.getAuth(app);
     const db = firestoreSdk.getFirestore(app, databaseId);
     const storage = storageSdk.getStorage(app, `gs://${config.storageBucket}`);
+    const functionsRegion = String(config.functionsRegion || config.kpayFunctionsRegion || "").trim();
+    const functions = functionsSdk
+      ? functionsRegion
+        ? functionsSdk.getFunctions(app, functionsRegion)
+        : functionsSdk.getFunctions(app)
+      : null;
     await authSdk.setPersistence(auth, authSdk.browserLocalPersistence);
     authSdk.useDeviceLanguage(auth);
 
@@ -577,17 +592,123 @@
       return { id: normalizedId, ...allowed };
     }
 
-    // This is a KPay-compatible payment stub. Real KPay integration should keep the return shape unchanged.
-    async function createPayment(orderId, options = {}) {
-      const normalizedOrderId = String(orderId || "").trim();
-      if (!normalizedOrderId) throw new Error("找不到訂單 ID。");
-      void options;
+    function createMockPayment(normalizedOrderId) {
       return {
         paymentId: `mock_${normalizedOrderId}_${Date.now()}`,
         orderId: normalizedOrderId,
         status: "mock",
         redirectUrl: null
       };
+    }
+
+    function normalizePaymentResult(result, normalizedOrderId) {
+      const data = result && typeof result === "object" ? result : {};
+      const status = ["pending", "mock", "failed"].includes(data.status) ? data.status : "failed";
+      return {
+        paymentId: String(data.paymentId || ""),
+        orderId: String(data.orderId || normalizedOrderId),
+        status,
+        redirectUrl: data.redirectUrl ? String(data.redirectUrl) : null
+      };
+    }
+
+    function isLivePaymentMode(options = {}) {
+      const configuredMode =
+        options.mode ||
+        config?.paymentMode ||
+        config?.kpayMode ||
+        config?.payments?.mode ||
+        window.ONLINE_SHOP_PAYMENT_MODE ||
+        "";
+      return String(configuredMode).toLowerCase() === "live";
+    }
+
+    function shouldUseMockPayment(options = {}) {
+      const configuredMode =
+        options.mode ||
+        config?.paymentMode ||
+        config?.kpayMode ||
+        config?.payments?.mode ||
+        window.ONLINE_SHOP_PAYMENT_MODE ||
+        "";
+      return options.mock === true || String(configuredMode).toLowerCase() === "mock";
+    }
+
+    function isLocalPaymentDevelopmentHost() {
+      const hostname = String(window.location?.hostname || "");
+      return ["localhost", "127.0.0.1", ""].includes(hostname);
+    }
+
+    function isPaymentBackendUnavailable(error) {
+      const code = String(error?.code || "").toLowerCase();
+      if ([
+        "functions/permission-denied",
+        "functions/unauthenticated",
+        "functions/invalid-argument",
+        "permission-denied",
+        "unauthenticated",
+        "invalid-argument"
+      ].includes(code)) {
+        return false;
+      }
+      if ([
+        "functions/internal",
+        "functions/not-found",
+        "functions/unavailable",
+        "functions/deadline-exceeded",
+        "internal",
+        "not-found",
+        "unavailable",
+        "deadline-exceeded"
+      ].includes(code)) {
+        return true;
+      }
+      const message = [
+        error?.message,
+        error?.details,
+        error?.name
+      ]
+        .filter(Boolean)
+        .map((value) => String(value).toLowerCase())
+        .join(" ");
+      return [
+        "net::err_failed",
+        "failed to fetch",
+        "cors",
+        "blocked by cors",
+        "networkerror",
+        "firebaseerror: internal"
+      ].some((pattern) => message.includes(pattern)) || message.trim() === "internal";
+    }
+
+    // KPay-compatible payment interface. Real KPay integration must keep this return shape unchanged.
+    async function createPayment(orderId, options = {}) {
+      const normalizedOrderId = String(orderId || "").trim();
+      if (!normalizedOrderId) throw new Error("找不到訂單 ID。");
+      const liveMode = isLivePaymentMode(options);
+      if (shouldUseMockPayment(options)) return createMockPayment(normalizedOrderId);
+      if (!liveMode && !options.forceBackend && isLocalPaymentDevelopmentHost()) {
+        return createMockPayment(normalizedOrderId);
+      }
+      if (!functionsSdk || !functions) {
+        if (liveMode) throw new Error("Payment backend is unavailable.");
+        return createMockPayment(normalizedOrderId);
+      }
+      try {
+        const createKpayPayment = functionsSdk.httpsCallable(functions, "createKpayPayment");
+        const response = await createKpayPayment({ orderId: normalizedOrderId });
+        return normalizePaymentResult(response?.data, normalizedOrderId);
+      } catch (error) {
+        if (!liveMode && isPaymentBackendUnavailable(error)) {
+          console.warn("Payment backend is unavailable; using mock payment fallback.", {
+            orderId: normalizedOrderId,
+            code: error?.code,
+            message: error?.message
+          });
+          return createMockPayment(normalizedOrderId);
+        }
+        throw error;
+      }
     }
 
     async function getActiveProducts() {
