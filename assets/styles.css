@@ -4208,6 +4208,23 @@ h6 {
   overflow-wrap: anywhere;
 }
 
+.content-editor-save-status {
+  color: #5f574c;
+  font-weight: 600;
+}
+
+.content-editor-save-status[data-type="success"] {
+  color: #35633c;
+}
+
+.content-editor-save-status[data-type="warning"] {
+  color: #8a6515;
+}
+
+.content-editor-save-status[data-type="error"] {
+  color: #a12f2f;
+}
+
 .merchant-products {
   display: grid;
   gap: 8px;

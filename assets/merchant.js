@@ -45,6 +45,10 @@
   let policyDrafts = {};
   let policyLoading = {};
   let policySaving = {};
+  let siteContentDirty = {};
+  let siteContentMessages = {};
+  let siteContentSavedSignatures = {};
+  let siteContentSaveState = {};
   let activeSiteContentId = "home";
   let siteContentPreviewMode = "desktop";
   let activeHomeHeroFieldId = null;
@@ -1992,12 +1996,235 @@
     });
   }
 
+  function siteContentMessageId(contentId = activeSiteContentId) {
+    return contentId === "home" ? "homeHero" : contentId;
+  }
+
+  function siteContentIdFromMessageId(messageId = "homeHero") {
+    return messageId === "homeHero" ? "home" : messageId;
+  }
+
+  function siteContentFormId(form) {
+    if (!form) return "";
+    if (form.matches("[data-home-hero-form]")) return "home";
+    if (form.matches("[data-footer-form]")) return "footer";
+    if (form.matches("[data-contact-form]")) return "contact";
+    if (form.matches("[data-about-form]")) return "about";
+    if (form.matches("[data-policy-form]")) return form.dataset.policyId || "";
+    return "";
+  }
+
+  function siteContentFormFromNode(node) {
+    return node?.closest?.("[data-home-hero-form], [data-footer-form], [data-contact-form], [data-about-form], [data-policy-form]") || null;
+  }
+
+  function siteContentComparable(contentId, data) {
+    const source = data || {};
+    if (contentId === "home") {
+      return {
+        type: "homeHero",
+        title: String(source.title || ""),
+        subtitle: String(source.subtitle || ""),
+        imageUrl: String(source.imageUrl || ""),
+        imagePath: String(source.imagePath || ""),
+        imageAlt: String(source.imageAlt || ""),
+        buttonText: String(source.buttonText || ""),
+        buttonHref: String(source.buttonHref || ""),
+        isActive: source.isActive === true
+      };
+    }
+    if (contentId === "footer") {
+      return {
+        type: "footer",
+        logoText: String(source.logoText || ""),
+        description: String(source.description || ""),
+        phone: String(source.phone || ""),
+        email: String(source.email || ""),
+        address: String(source.address || ""),
+        copyright: String(source.copyright || ""),
+        instagramUrl: String(source.instagramUrl || ""),
+        facebookUrl: String(source.facebookUrl || ""),
+        isActive: source.isActive === true
+      };
+    }
+    if (contentId === "contact") {
+      return {
+        type: "contact",
+        title: String(source.title || ""),
+        subtitle: String(source.subtitle || ""),
+        address: String(source.address || ""),
+        phone: String(source.phone || ""),
+        email: String(source.email || ""),
+        openingHours: String(source.openingHours || ""),
+        googleMapEmbedUrl: String(source.googleMapEmbedUrl || ""),
+        other: String(source.other || ""),
+        isActive: source.isActive === true
+      };
+    }
+    if (contentId === "about") {
+      return {
+        type: "about",
+        title: String(source.title || ""),
+        subtitle: String(source.subtitle || ""),
+        intro: String(source.intro || ""),
+        sectionTitle: String(source.sectionTitle || ""),
+        sectionContent: String(source.sectionContent || ""),
+        imageUrl: String(source.imageUrl || ""),
+        imageAlt: String(source.imageAlt || ""),
+        isActive: source.isActive === true
+      };
+    }
+    const item = policyItemById(contentId);
+    if (item) {
+      return {
+        type: "policy",
+        policyKey: item.key,
+        title: String(source.title || ""),
+        content: String(source.content || ""),
+        isActive: source.isActive === true
+      };
+    }
+    return source;
+  }
+
+  function siteContentSignature(contentId, data) {
+    return JSON.stringify(siteContentComparable(contentId, data));
+  }
+
+  function rememberSiteContentSaved(contentId, data) {
+    if (!contentId) return;
+    siteContentSavedSignatures = {
+      ...siteContentSavedSignatures,
+      [contentId]: siteContentSignature(contentId, data)
+    };
+    siteContentDirty = {
+      ...siteContentDirty,
+      [contentId]: false
+    };
+  }
+
+  function isSiteContentDirty(contentId = activeSiteContentId) {
+    return siteContentDirty[contentId] === true;
+  }
+
+  function hasAnyDirtySiteContent() {
+    return Object.values(siteContentDirty).some(Boolean);
+  }
+
+  function isSiteContentSaving(contentId) {
+    if (contentId === "home") return homeHeroSaving || homeHeroUploading;
+    if (contentId === "footer") return footerSaving;
+    if (contentId === "contact") return contactSaving;
+    if (contentId === "about") return aboutSaving;
+    return policySaving[contentId] === true;
+  }
+
+  function updateSiteContentSaveButton(contentId) {
+    const button = document.querySelector(`[data-site-content-save-button="${contentId}"]`);
+    if (!button) return;
+    const form = siteContentFormFromNode(button);
+    const fieldsetDisabled = form?.querySelector("fieldset")?.disabled === true;
+    button.disabled = fieldsetDisabled || isSiteContentSaving(contentId) || !isSiteContentDirty(contentId);
+  }
+
+  function setSiteContentDirtyState(contentId, isDirty, message = "", type = "info") {
+    if (!contentId) return;
+    siteContentDirty = {
+      ...siteContentDirty,
+      [contentId]: isDirty === true
+    };
+    siteContentSaveState = {
+      ...siteContentSaveState,
+      [contentId]: isDirty ? "dirty" : (siteContentSaveState[contentId] || "idle")
+    };
+    if (message) setSiteContentMessage(message, type, siteContentMessageId(contentId));
+    updateSiteContentSaveButton(contentId);
+  }
+
+  function setSiteContentSaveState(contentId, state, message, type = "info") {
+    if (!contentId) return;
+    siteContentSaveState = {
+      ...siteContentSaveState,
+      [contentId]: state
+    };
+    if (state === "saving" || state === "saved") {
+      siteContentDirty = {
+        ...siteContentDirty,
+        [contentId]: false
+      };
+    }
+    setSiteContentMessage(message, type, siteContentMessageId(contentId));
+    updateSiteContentSaveButton(contentId);
+  }
+
   function setSiteContentMessage(message, type = "info", contentId = "homeHero") {
+    const normalizedContentId = siteContentIdFromMessageId(contentId);
+    siteContentMessages = {
+      ...siteContentMessages,
+      [normalizedContentId]: { message, type }
+    };
     const node = document.querySelector(`[data-site-content-message="${contentId}"]`)
       || (contentId === "homeHero" ? document.querySelector("[data-site-content-message]") : null);
     if (!node) return;
     node.textContent = message;
     node.dataset.type = type;
+  }
+
+  function applySiteContentMessages() {
+    Object.entries(siteContentMessages).forEach(([contentId, status]) => {
+      const messageId = siteContentMessageId(contentId);
+      const node = document.querySelector(`[data-site-content-message="${messageId}"]`);
+      if (!node || !status) return;
+      node.textContent = status.message || "";
+      node.dataset.type = status.type || "info";
+    });
+    SITE_CONTENT_NAV_ITEMS.forEach((item) => updateSiteContentSaveButton(item.id));
+  }
+
+  function syncSiteContentDraftFromForm(form) {
+    const contentId = siteContentFormId(form);
+    if (contentId === "home") return syncHomeHeroDraftFromForm(form);
+    if (contentId === "footer") return syncFooterDraftFromForm(form);
+    if (contentId === "contact") return syncContactDraftFromForm(form);
+    if (contentId === "about") return syncAboutDraftFromForm(form);
+    if (policyItemById(contentId)) return syncPolicyDraftFromForm(form);
+    return null;
+  }
+
+  function refreshSiteContentDirtyFromForm(form) {
+    const contentId = siteContentFormId(form);
+    if (!contentId) return false;
+    const draft = syncSiteContentDraftFromForm(form);
+    const savedSignature = siteContentSavedSignatures[contentId] || "";
+    const isDirty = siteContentSignature(contentId, draft) !== savedSignature;
+    if (isDirty) {
+      setSiteContentDirtyState(contentId, true, "未儲存變更", "warning");
+    } else {
+      setSiteContentDirtyState(contentId, false);
+      if (siteContentSaveState[contentId] === "dirty") {
+        setSiteContentSaveState(contentId, "saved", "已儲存", "success");
+      }
+    }
+    return isDirty;
+  }
+
+  function validateSiteContentDraft(contentId, draft) {
+    const item = policyItemById(contentId);
+    if (contentId === "home" && !String(draft?.title || "").trim()) return "請填寫 Home Hero title。";
+    if (contentId === "footer" && !String(draft?.logoText || "").trim()) return "請填寫 Footer logo text。";
+    if (contentId === "contact" && !String(draft?.title || "").trim()) return "請填寫 Contact title。";
+    if (contentId === "about" && !String(draft?.title || "").trim()) return "請填寫 About title。";
+    if (item && !String(draft?.title || "").trim()) return `請填寫 ${item.label} title。`;
+    if (item && !String(draft?.content || "").trim()) return `請填寫 ${item.label} content。`;
+    return "";
+  }
+
+  function confirmSiteContentSwitch(nextContentId) {
+    if (nextContentId === activeSiteContentId) return true;
+    const activeForm = document.querySelector(".merchant-site-content__editor-scroll form");
+    if (activeForm) refreshSiteContentDirtyFromForm(activeForm);
+    if (!isSiteContentDirty(activeSiteContentId)) return true;
+    return window.confirm("目前頁面有未儲存變更。確定要切換到其他頁面嗎？");
   }
 
   function syncHomeHeroDraftFromForm(form = document.querySelector("[data-home-hero-form]")) {
@@ -2250,24 +2477,28 @@
     const canEdit = canEditPageContent();
     const permissionMessage = pageContentPermissionMessage();
     const controlsDisabled = !canEdit || homeHeroLoading || homeHeroSaving || homeHeroUploading;
-    const saveText = homeHeroSaving ? "Saving..." : "Save Home Hero";
+    const homeSaveDisabled = controlsDisabled || !isSiteContentDirty("home");
+    const saveText = homeHeroSaving ? "儲存中..." : "Save Home Hero";
     const uploadText = homeHeroUploading ? "Uploading image..." : "Hero image";
     const footer = footerDraft || fallbackFooterContent();
     const footerControlsDisabled = !canEdit || footerLoading || footerSaving;
-    const footerSaveText = footerSaving ? "Saving..." : "Save Footer";
+    const footerSaveDisabled = footerControlsDisabled || !isSiteContentDirty("footer");
+    const footerSaveText = footerSaving ? "儲存中..." : "Save Footer";
     const footerPhoneHref = String(footer.phone || "").replace(/[^+\d]/g, "");
     const footerEmail = String(footer.email || "").trim();
     const footerInstagramUrl = resolvePreviewUrl(footer.instagramUrl);
     const footerFacebookUrl = resolvePreviewUrl(footer.facebookUrl);
     const contact = contactDraft || fallbackContactContent();
     const contactControlsDisabled = !canEdit || contactLoading || contactSaving;
-    const contactSaveText = contactSaving ? "Saving..." : "Save Contact";
+    const contactSaveDisabled = contactControlsDisabled || !isSiteContentDirty("contact");
+    const contactSaveText = contactSaving ? "儲存中..." : "Save Contact";
     const contactPhoneHref = String(contact.phone || "").replace(/[^+\d]/g, "");
     const contactEmail = String(contact.email || "").trim();
     const contactMapUrl = resolvePreviewUrl(contact.googleMapEmbedUrl);
     const about = aboutDraft || fallbackAboutContent();
     const aboutControlsDisabled = !canEdit || aboutLoading || aboutSaving;
-    const aboutSaveText = aboutSaving ? "Saving..." : "Save About";
+    const aboutSaveDisabled = aboutControlsDisabled || !isSiteContentDirty("about");
+    const aboutSaveText = aboutSaving ? "儲存中..." : "Save About";
     const aboutImageUrl = resolvePreviewUrl(about.imageUrl);
     const homePreviewBody = `
       ${hero.isActive ? `
@@ -2394,9 +2625,9 @@
             <div class="merchant-site-content__meta">
               <span>${escapeHtml(hero.imagePath || "site-content/home/")}</span>
             </div>
-            <p class="merchant-message" data-site-content-message="homeHero" aria-live="polite"></p>
+            <p class="merchant-message content-editor-save-status" data-site-content-message="homeHero" aria-live="polite"></p>
             <div class="merchant-modal__actions">
-              <button class="merchant-primary-button" type="submit" data-save-home-hero ${controlsDisabled ? "disabled" : ""}>${saveText}</button>
+              <button class="merchant-primary-button" type="submit" data-save-home-hero data-site-content-save-button="home" ${homeSaveDisabled ? "disabled" : ""}>${saveText}</button>
             </div>
             ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
           </form>
@@ -2442,9 +2673,9 @@
                 <span>Show About</span>
               </label>
             </fieldset>
-            <p class="merchant-message" data-site-content-message="about" aria-live="polite"></p>
+            <p class="merchant-message content-editor-save-status" data-site-content-message="about" aria-live="polite"></p>
             <div class="merchant-modal__actions">
-              <button class="merchant-primary-button" type="submit" data-save-about ${aboutControlsDisabled ? "disabled" : ""}>${aboutSaveText}</button>
+              <button class="merchant-primary-button" type="submit" data-save-about data-site-content-save-button="about" ${aboutSaveDisabled ? "disabled" : ""}>${aboutSaveText}</button>
             </div>
             ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
           </form>
@@ -2493,9 +2724,9 @@
                 <span>Show Contact</span>
               </label>
             </fieldset>
-            <p class="merchant-message" data-site-content-message="contact" aria-live="polite"></p>
+            <p class="merchant-message content-editor-save-status" data-site-content-message="contact" aria-live="polite"></p>
             <div class="merchant-modal__actions">
-              <button class="merchant-primary-button" type="submit" data-save-contact ${contactControlsDisabled ? "disabled" : ""}>${contactSaveText}</button>
+              <button class="merchant-primary-button" type="submit" data-save-contact data-site-content-save-button="contact" ${contactSaveDisabled ? "disabled" : ""}>${contactSaveText}</button>
             </div>
             ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
           </form>
@@ -2546,9 +2777,9 @@
                 <span>Show Footer</span>
               </label>
             </fieldset>
-            <p class="merchant-message" data-site-content-message="footer" aria-live="polite"></p>
+            <p class="merchant-message content-editor-save-status" data-site-content-message="footer" aria-live="polite"></p>
             <div class="merchant-modal__actions">
-              <button class="merchant-primary-button" type="submit" data-save-footer ${footerControlsDisabled ? "disabled" : ""}>${footerSaveText}</button>
+              <button class="merchant-primary-button" type="submit" data-save-footer data-site-content-save-button="footer" ${footerSaveDisabled ? "disabled" : ""}>${footerSaveText}</button>
             </div>
             ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
           </form>
@@ -2559,7 +2790,8 @@
     POLICY_CONTENT_ITEMS.forEach((item) => {
       const policy = policyDrafts[item.id] || fallbackPolicyContent(item);
       const controlsAreDisabled = !canEdit || policyLoading[item.id] || policySaving[item.id];
-      const policySaveText = policySaving[item.id] ? "Saving..." : `Save ${item.label}`;
+      const policySaveDisabled = controlsAreDisabled || !isSiteContentDirty(item.id);
+      const policySaveText = policySaving[item.id] ? "儲存中..." : `Save ${item.label}`;
       const policyPreviewBody = `
         <section class="info-page policy-page">
           <h1 data-preview-field="${escapeHtml(item.id)}.title">${escapeHtml(policy.title || item.label)}</h1>
@@ -2588,9 +2820,9 @@
                 <span>Show ${escapeHtml(item.label)}</span>
               </label>
             </fieldset>
-            <p class="merchant-message" data-site-content-message="${escapeHtml(item.id)}" aria-live="polite"></p>
+            <p class="merchant-message content-editor-save-status" data-site-content-message="${escapeHtml(item.id)}" aria-live="polite"></p>
             <div class="merchant-modal__actions">
-              <button class="merchant-primary-button" type="submit" ${controlsAreDisabled ? "disabled" : ""}>${escapeHtml(policySaveText)}</button>
+              <button class="merchant-primary-button" type="submit" data-site-content-save-button="${escapeHtml(item.id)}" ${policySaveDisabled ? "disabled" : ""}>${escapeHtml(policySaveText)}</button>
             </div>
             ${!canEdit && permissionMessage ? `<p class="merchant-message" data-type="${currentMerchantRoleLoading || !currentMerchantRoleLoaded ? "info" : "error"}">${escapeHtml(permissionMessage)}</p>` : ""}
           </form>
@@ -2649,6 +2881,7 @@
     applyContactVisualSelection();
     applyAboutVisualSelection();
     applyPolicyVisualSelection();
+    applySiteContentMessages();
 
     if (homeHeroLoading) setSiteContentMessage("Loading Home Hero...", "info");
     if (footerLoading) setSiteContentMessage("Loading Footer...", "info", "footer");
@@ -2725,12 +2958,14 @@
       const firebase = await firebaseService();
       const remoteHero = await firebase.getSiteContent("home");
       homeHeroDraft = normalizeHomeHero(remoteHero);
+      rememberSiteContentSaved("home", homeHeroDraft);
       homeHeroLoading = false;
       renderSiteContentPanel();
       setSiteContentMessage(remoteHero ? "Home Hero loaded." : "Using fallback Home Hero.", "success");
     } catch (error) {
       homeHeroLoading = false;
       homeHeroDraft = homeHeroDraft || fallbackHomeHero();
+      rememberSiteContentSaved("home", homeHeroDraft);
       renderSiteContentPanel();
       setSiteContentMessage(merchantErrorMessage(error, "Could not load Home Hero. Using fallback content."), "error");
     }
@@ -2745,12 +2980,14 @@
       const firebase = await firebaseService();
       const remoteFooter = await firebase.getSiteContent("footer");
       footerDraft = normalizeFooterContent(remoteFooter);
+      rememberSiteContentSaved("footer", footerDraft);
       footerLoading = false;
       renderSiteContentPanel();
       setSiteContentMessage(remoteFooter ? "Footer loaded." : "Using fallback Footer.", "success", "footer");
     } catch (error) {
       footerLoading = false;
       footerDraft = footerDraft || fallbackFooterContent();
+      rememberSiteContentSaved("footer", footerDraft);
       renderSiteContentPanel();
       setSiteContentMessage(merchantErrorMessage(error, "Could not load Footer. Using fallback content."), "error", "footer");
     }
@@ -2765,12 +3002,14 @@
       const firebase = await firebaseService();
       const remoteContact = await firebase.getSiteContent("contact");
       contactDraft = normalizeContactContent(remoteContact);
+      rememberSiteContentSaved("contact", contactDraft);
       contactLoading = false;
       renderSiteContentPanel();
       setSiteContentMessage(remoteContact ? "Contact loaded." : "Using fallback Contact.", "success", "contact");
     } catch (error) {
       contactLoading = false;
       contactDraft = contactDraft || fallbackContactContent();
+      rememberSiteContentSaved("contact", contactDraft);
       renderSiteContentPanel();
       setSiteContentMessage(merchantErrorMessage(error, "Could not load Contact. Using fallback content."), "error", "contact");
     }
@@ -2785,12 +3024,14 @@
       const firebase = await firebaseService();
       const remoteAbout = await firebase.getSiteContent("about");
       aboutDraft = normalizeAboutContent(remoteAbout);
+      rememberSiteContentSaved("about", aboutDraft);
       aboutLoading = false;
       renderSiteContentPanel();
       setSiteContentMessage(remoteAbout ? "About loaded." : "Using fallback About.", "success", "about");
     } catch (error) {
       aboutLoading = false;
       aboutDraft = aboutDraft || fallbackAboutContent();
+      rememberSiteContentSaved("about", aboutDraft);
       renderSiteContentPanel();
       setSiteContentMessage(merchantErrorMessage(error, "Could not load About. Using fallback content."), "error", "about");
     }
@@ -2811,6 +3052,7 @@
         ...policyDrafts,
         [item.id]: normalizePolicyContent(item, remotePolicy)
       };
+      rememberSiteContentSaved(item.id, policyDrafts[item.id]);
       policyLoading = { ...policyLoading, [item.id]: false };
       renderSiteContentPanel();
       setSiteContentMessage(remotePolicy ? `${item.label} loaded.` : `Using fallback ${item.label}.`, "success", item.id);
@@ -2820,6 +3062,7 @@
         ...policyDrafts,
         [item.id]: policyDrafts[item.id] || fallbackPolicyContent(item)
       };
+      rememberSiteContentSaved(item.id, policyDrafts[item.id]);
       renderSiteContentPanel();
       setSiteContentMessage(merchantErrorMessage(error, `Could not load ${item.label}. Using fallback content.`), "error", item.id);
     }
@@ -2862,8 +3105,8 @@
         imageAlt: homeHeroDraft?.imageAlt || file.name
       };
       homeHeroUploading = false;
+      setSiteContentDirtyState("home", true, "未儲存變更", "warning");
       renderSiteContentPanel();
-      setSiteContentMessage("Image uploaded. Save Home Hero to publish it.", "success");
     } catch (error) {
       homeHeroUploading = false;
       renderSiteContentPanel();
@@ -2882,6 +3125,11 @@
       return;
     }
     const draft = syncHomeHeroDraftFromForm(form);
+    const validationMessage = validateSiteContentDraft("home", draft);
+    if (validationMessage) {
+      setSiteContentDirtyState("home", true, validationMessage, "error");
+      return;
+    }
     const payload = {
       type: "homeHero",
       title: draft.title,
@@ -2895,17 +3143,20 @@
     };
 
     homeHeroSaving = true;
+    setSiteContentSaveState("home", "saving", "儲存中...", "info");
     renderSiteContentPanel();
     try {
       const firebase = await firebaseService();
       await firebase.saveSiteContent("home", payload);
       homeHeroSaving = false;
       homeHeroDraft = normalizeHomeHero(payload);
+      rememberSiteContentSaved("home", homeHeroDraft);
       renderSiteContentPanel();
-      setSiteContentMessage("Home Hero saved.", "success");
+      setSiteContentSaveState("home", "saved", "已儲存", "success");
       showMerchantToast("Home Hero saved");
     } catch (error) {
       homeHeroSaving = false;
+      setSiteContentDirtyState("home", true);
       renderSiteContentPanel();
       console.error({
         action: "saveHomeHeroForm",
@@ -2916,7 +3167,7 @@
       const message = error?.code === "permission-denied"
         ? "Firestore rejected the Home Hero save. Please check deployed firestore.rules for siteContent/home."
         : "Could not save Home Hero.";
-      setSiteContentMessage(message, "error");
+      setSiteContentSaveState("home", "error", message, "error");
     }
   }
 
@@ -2927,6 +3178,11 @@
       return;
     }
     const draft = syncFooterDraftFromForm(form);
+    const validationMessage = validateSiteContentDraft("footer", draft);
+    if (validationMessage) {
+      setSiteContentDirtyState("footer", true, validationMessage, "error");
+      return;
+    }
     const payload = {
       type: "footer",
       logoText: draft.logoText,
@@ -2941,17 +3197,20 @@
     };
 
     footerSaving = true;
+    setSiteContentSaveState("footer", "saving", "儲存中...", "info");
     renderSiteContentPanel();
     try {
       const firebase = await firebaseService();
       await firebase.saveSiteContent("footer", payload);
       footerSaving = false;
       footerDraft = normalizeFooterContent(payload);
+      rememberSiteContentSaved("footer", footerDraft);
       renderSiteContentPanel();
-      setSiteContentMessage("Footer saved.", "success", "footer");
+      setSiteContentSaveState("footer", "saved", "已儲存", "success");
       showMerchantToast("Footer saved");
     } catch (error) {
       footerSaving = false;
+      setSiteContentDirtyState("footer", true);
       renderSiteContentPanel();
       console.error({
         action: "saveFooterForm",
@@ -2962,7 +3221,7 @@
       const message = error?.code === "permission-denied"
         ? "Firestore rejected the Footer save. Please check deployed firestore.rules for siteContent/footer."
         : "Could not save Footer.";
-      setSiteContentMessage(message, "error", "footer");
+      setSiteContentSaveState("footer", "error", message, "error");
     }
   }
 
@@ -2973,6 +3232,11 @@
       return;
     }
     const draft = syncContactDraftFromForm(form);
+    const validationMessage = validateSiteContentDraft("contact", draft);
+    if (validationMessage) {
+      setSiteContentDirtyState("contact", true, validationMessage, "error");
+      return;
+    }
     const payload = {
       type: "contact",
       title: draft.title,
@@ -2987,17 +3251,20 @@
     };
 
     contactSaving = true;
+    setSiteContentSaveState("contact", "saving", "儲存中...", "info");
     renderSiteContentPanel();
     try {
       const firebase = await firebaseService();
       await firebase.saveSiteContent("contact", payload);
       contactSaving = false;
       contactDraft = normalizeContactContent(payload);
+      rememberSiteContentSaved("contact", contactDraft);
       renderSiteContentPanel();
-      setSiteContentMessage("Contact saved.", "success", "contact");
+      setSiteContentSaveState("contact", "saved", "已儲存", "success");
       showMerchantToast("Contact saved");
     } catch (error) {
       contactSaving = false;
+      setSiteContentDirtyState("contact", true);
       renderSiteContentPanel();
       console.error({
         action: "saveContactForm",
@@ -3008,7 +3275,7 @@
       const message = error?.code === "permission-denied"
         ? "Firestore rejected the Contact save. Please check deployed firestore.rules for siteContent/contact."
         : "Could not save Contact.";
-      setSiteContentMessage(message, "error", "contact");
+      setSiteContentSaveState("contact", "error", message, "error");
     }
   }
 
@@ -3019,6 +3286,11 @@
       return;
     }
     const draft = syncAboutDraftFromForm(form);
+    const validationMessage = validateSiteContentDraft("about", draft);
+    if (validationMessage) {
+      setSiteContentDirtyState("about", true, validationMessage, "error");
+      return;
+    }
     const payload = {
       type: "about",
       title: draft.title,
@@ -3032,17 +3304,20 @@
     };
 
     aboutSaving = true;
+    setSiteContentSaveState("about", "saving", "儲存中...", "info");
     renderSiteContentPanel();
     try {
       const firebase = await firebaseService();
       await firebase.saveSiteContent("about", payload);
       aboutSaving = false;
       aboutDraft = normalizeAboutContent(payload);
+      rememberSiteContentSaved("about", aboutDraft);
       renderSiteContentPanel();
-      setSiteContentMessage("About saved.", "success", "about");
+      setSiteContentSaveState("about", "saved", "已儲存", "success");
       showMerchantToast("About saved");
     } catch (error) {
       aboutSaving = false;
+      setSiteContentDirtyState("about", true);
       renderSiteContentPanel();
       console.error({
         action: "saveAboutForm",
@@ -3053,7 +3328,7 @@
       const message = error?.code === "permission-denied"
         ? "Firestore rejected the About save. Please check deployed firestore.rules for siteContent/about."
         : "Could not save About.";
-      setSiteContentMessage(message, "error", "about");
+      setSiteContentSaveState("about", "error", message, "error");
     }
   }
 
@@ -3067,6 +3342,11 @@
     }
     const draft = syncPolicyDraftFromForm(form);
     if (!draft) return;
+    const validationMessage = validateSiteContentDraft(item.id, draft);
+    if (validationMessage) {
+      setSiteContentDirtyState(item.id, true, validationMessage, "error");
+      return;
+    }
     const payload = {
       type: "policy",
       policyKey: item.key,
@@ -3076,6 +3356,7 @@
     };
 
     policySaving = { ...policySaving, [item.id]: true };
+    setSiteContentSaveState(item.id, "saving", "儲存中...", "info");
     renderSiteContentPanel();
     try {
       const firebase = await firebaseService();
@@ -3085,11 +3366,13 @@
         ...policyDrafts,
         [item.id]: normalizePolicyContent(item, payload)
       };
+      rememberSiteContentSaved(item.id, policyDrafts[item.id]);
       renderSiteContentPanel();
-      setSiteContentMessage(`${item.label} saved.`, "success", item.id);
+      setSiteContentSaveState(item.id, "saved", "已儲存", "success");
       showMerchantToast(`${item.label} saved`);
     } catch (error) {
       policySaving = { ...policySaving, [item.id]: false };
+      setSiteContentDirtyState(item.id, true);
       renderSiteContentPanel();
       console.error({
         action: "savePolicyForm",
@@ -3101,7 +3384,7 @@
       const message = error?.code === "permission-denied"
         ? `Firestore rejected the ${item.label} save. Please check deployed firestore.rules for siteContent/${item.docId}.`
         : `Could not save ${item.label}.`;
-      setSiteContentMessage(message, "error", item.id);
+      setSiteContentSaveState(item.id, "error", message, "error");
     }
   }
 
@@ -3764,8 +4047,10 @@
     if (event.target.closest("[data-merchant-dashboard-logout]")) return handleMerchantLogout();
     const siteContentNavButton = event.target.closest("[data-site-content-nav]");
     if (siteContentNavButton) {
+      const nextContentId = siteContentNavButton.getAttribute("data-site-content-nav") || "home";
+      if (!confirmSiteContentSwitch(nextContentId)) return;
       syncVisibleSiteContentDrafts();
-      activeSiteContentId = siteContentNavButton.getAttribute("data-site-content-nav") || "home";
+      activeSiteContentId = nextContentId;
       activeDashboardSection = "site";
       clearSiteContentVisualSelectionState();
       setMerchantSectionActive("site");
@@ -4015,7 +4300,22 @@
     if (event.target.closest("[data-close-merchant-modal]")) closeMerchantModals();
   });
 
+  document.addEventListener("input", (event) => {
+    const form = siteContentFormFromNode(event.target);
+    if (!form || event.target.matches("[data-site-content-image-upload]")) return;
+    refreshSiteContentDirtyFromForm(form);
+  });
+
   document.addEventListener("change", (event) => {
+    if (event.target.matches("[data-site-content-image-upload]")) {
+      uploadHomeHeroImage(event.target);
+      return;
+    }
+    const siteContentForm = siteContentFormFromNode(event.target);
+    if (siteContentForm) {
+      refreshSiteContentDirtyFromForm(siteContentForm);
+      return;
+    }
     if (event.target.matches("[data-product-category-parent], [data-product-category-child]")) {
       updateProductCategoryAssignment(event.target);
       return;
@@ -4039,6 +4339,14 @@
 
   window.addEventListener("storage", (event) => {
     if ([store?.storageKey, store?.categoryStorageKey].includes(event.key) && currentMerchant) renderProductRows();
+  });
+
+  window.addEventListener("beforeunload", (event) => {
+    const activeForm = document.querySelector(".merchant-site-content__editor-scroll form");
+    if (activeForm) refreshSiteContentDirtyFromForm(activeForm);
+    if (!hasAnyDirtySiteContent()) return;
+    event.preventDefault();
+    event.returnValue = "";
   });
 
   async function initMerchantAccess() {
