@@ -2762,6 +2762,135 @@ h6 {
   min-width: 180px;
 }
 
+.profile-address-page {
+  display: grid;
+  gap: 22px;
+}
+
+.profile-address-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.profile-address-header h2,
+.profile-address-header p {
+  margin: 0;
+}
+
+.profile-address-header p {
+  margin-top: 8px;
+  color: #6f695e;
+}
+
+.address-book-list {
+  display: grid;
+  gap: 12px;
+}
+
+.address-book-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  border: 1px solid #e2ded8;
+  background: #faf8f4;
+  padding: 16px;
+}
+
+.address-book-card__main {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.address-book-card__main p {
+  margin: 0;
+  color: #4d4846;
+  word-break: break-word;
+}
+
+.address-book-card__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.address-book-card__badge {
+  border: 1px solid #c7b49f;
+  color: #6f5234;
+  background: #fffaf4;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.address-book-card__actions {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.address-book-card__actions button {
+  border: 1px solid #d7d3d0;
+  background: #fff;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.profile-address-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  border-top: 1px solid #e2ded8;
+  padding-top: 20px;
+}
+
+.profile-address-form h3,
+.profile-address-form__wide,
+.profile-address-form__actions,
+.profile-address-form .profile-settings-form__message {
+  grid-column: 1 / -1;
+}
+
+.profile-address-form h3 {
+  margin: 0;
+}
+
+.profile-address-form label {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.profile-address-form input,
+.profile-address-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #d7d3d0;
+  padding: 11px 12px;
+  font: inherit;
+  background: #fff;
+}
+
+.profile-address-checkbox {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+}
+
+.profile-address-checkbox input {
+  width: auto;
+}
+
+.profile-address-form__actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .profile-page--empty {
   display: block;
 }
@@ -3292,8 +3421,15 @@ h6 {
 
   .profile-summary,
   .profile-settings-form,
+  .profile-address-form,
+  .address-book-card,
   .profile-order-card {
     grid-template-columns: 1fr;
+  }
+
+  .profile-address-header,
+  .address-book-card__actions {
+    justify-content: flex-start;
   }
 }
 
@@ -5182,6 +5318,21 @@ h6 {
 
 .checkout-address.is-hidden {
   display: none;
+}
+
+.checkout-address-book {
+  margin-top: 16px;
+}
+
+.checkout-address-save {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.checkout-address-save .checkout-checkbox {
+  margin: 0;
 }
 
 .checkout-summary-items {

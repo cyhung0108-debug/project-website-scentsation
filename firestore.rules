@@ -364,6 +364,40 @@ service cloud.firestore {
         ]);
     }
 
+    function validCustomerAddressPayload(data) {
+      return data.keys().hasOnly([
+          "recipientName", "recipientPhone", "address", "isDefault", "createdAt", "updatedAt"
+        ])
+        && data.recipientName is string
+        && data.recipientName.size() > 0
+        && data.recipientName.size() <= 80
+        && data.recipientPhone is string
+        && data.recipientPhone.size() > 0
+        && data.recipientPhone.size() <= 40
+        && data.address is string
+        && data.address.size() > 0
+        && data.address.size() <= 500
+        && data.isDefault is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function validCustomerAddressCreate(userId) {
+      return isOwner(userId)
+        && isActiveUser()
+        && validCustomerAddressPayload(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function validCustomerAddressUpdate(userId) {
+      return isOwner(userId)
+        && isActiveUser()
+        && validCustomerAddressPayload(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time;
+    }
+
     function validInviteUserUpdate(userId) {
       return isOwner(userId)
         && request.resource.data.uid == resource.data.uid
@@ -671,6 +705,13 @@ service cloud.firestore {
 
       match /cart/{itemId} {
         allow read, create, update, delete: if isOwner(userId) && isActiveUser();
+      }
+
+      match /addresses/{addressId} {
+        allow read: if isOwner(userId) && isActiveUser();
+        allow create: if validCustomerAddressCreate(userId);
+        allow update: if validCustomerAddressUpdate(userId);
+        allow delete: if isOwner(userId) && isActiveUser();
       }
     }
 

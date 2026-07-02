@@ -163,6 +163,42 @@
       };
     }
 
+    function customerAddressCollection(uid) {
+      return firestoreSdk.collection(db, "users", String(uid || ""), "addresses");
+    }
+
+    function customerAddressDocument(uid, addressId) {
+      return firestoreSdk.doc(db, "users", String(uid || ""), "addresses", String(addressId || ""));
+    }
+
+    function normalizeCustomerAddressRecord(snapshot) {
+      const data = { id: snapshot.id, ...snapshot.data() };
+      return {
+        id: data.id,
+        recipientName: String(data.recipientName || ""),
+        recipientPhone: String(data.recipientPhone || ""),
+        address: String(data.address || ""),
+        isDefault: data.isDefault === true,
+        createdAt: normalizeTimestamp(data.createdAt),
+        updatedAt: normalizeTimestamp(data.updatedAt)
+      };
+    }
+
+    function sanitizeCustomerAddressPayload(addressData = {}) {
+      return {
+        recipientName: String(addressData.recipientName || "").trim(),
+        recipientPhone: String(addressData.recipientPhone || "").trim(),
+        address: String(addressData.address || "").trim(),
+        isDefault: addressData.isDefault === true
+      };
+    }
+
+    function validateCustomerAddressPayload(payload) {
+      if (!payload.recipientName) throw new Error("請輸入收件人名稱。");
+      if (!payload.recipientPhone) throw new Error("請輸入聯絡電話。");
+      if (!payload.address) throw new Error("請輸入配送地址。");
+    }
+
     async function getMerchantRole(uid) {
       if (!uid) return null;
       const roleRef = firestoreSdk.doc(db, "merchantRoles", String(uid));
@@ -432,6 +468,107 @@
         (snapshot) => callback(snapshot.exists() ? normalizeUserRecord(snapshot) : null),
         onError
       );
+    }
+
+    function sortCustomerAddresses(addresses) {
+      return addresses.sort((a, b) => {
+        if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+        return String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
+      });
+    }
+
+    function listenCustomerAddresses(uid, callback, onError) {
+      if (!uid) return () => {};
+      return firestoreSdk.onSnapshot(
+        customerAddressCollection(uid),
+        (snapshot) => callback(sortCustomerAddresses(snapshot.docs.map(normalizeCustomerAddressRecord))),
+        onError
+      );
+    }
+
+    async function writeCustomerDefaultUpdates(uid, batch, exceptAddressId = "") {
+      const snapshot = await firestoreSdk.getDocs(customerAddressCollection(uid));
+      snapshot.docs.forEach((docSnapshot) => {
+        if (String(docSnapshot.id) === String(exceptAddressId || "")) return;
+        if (docSnapshot.data()?.isDefault !== true) return;
+        batch.set(docSnapshot.ref, {
+          isDefault: false,
+          updatedAt: firestoreSdk.serverTimestamp()
+        }, { merge: true });
+      });
+      return snapshot.empty;
+    }
+
+    async function createCustomerAddress(uid, addressData) {
+      const normalizedUid = String(uid || auth.currentUser?.uid || "").trim();
+      if (!normalizedUid) throw new Error("請先登入。");
+      const payload = sanitizeCustomerAddressPayload(addressData);
+      validateCustomerAddressPayload(payload);
+      const addressRef = firestoreSdk.doc(customerAddressCollection(normalizedUid));
+      const batch = firestoreSdk.writeBatch(db);
+      const snapshot = await firestoreSdk.getDocs(customerAddressCollection(normalizedUid));
+      const shouldBeDefault = payload.isDefault === true || snapshot.empty;
+      if (shouldBeDefault) {
+        snapshot.docs.forEach((docSnapshot) => {
+          if (docSnapshot.data()?.isDefault !== true) return;
+          batch.set(docSnapshot.ref, {
+            isDefault: false,
+            updatedAt: firestoreSdk.serverTimestamp()
+          }, { merge: true });
+        });
+      }
+      const now = firestoreSdk.serverTimestamp();
+      batch.set(addressRef, {
+        ...payload,
+        isDefault: shouldBeDefault,
+        createdAt: now,
+        updatedAt: now
+      });
+      await batch.commit();
+      return { id: addressRef.id, ...payload, isDefault: shouldBeDefault };
+    }
+
+    async function updateCustomerAddress(uid, addressId, updates) {
+      const normalizedUid = String(uid || auth.currentUser?.uid || "").trim();
+      const normalizedAddressId = String(addressId || "").trim();
+      if (!normalizedUid) throw new Error("請先登入。");
+      if (!normalizedAddressId) throw new Error("找不到配送地址。");
+      const payload = sanitizeCustomerAddressPayload(updates);
+      validateCustomerAddressPayload(payload);
+      const batch = firestoreSdk.writeBatch(db);
+      if (payload.isDefault) {
+        await writeCustomerDefaultUpdates(normalizedUid, batch, normalizedAddressId);
+      }
+      batch.set(customerAddressDocument(normalizedUid, normalizedAddressId), {
+        ...payload,
+        updatedAt: firestoreSdk.serverTimestamp()
+      }, { merge: true });
+      await batch.commit();
+      return { id: normalizedAddressId, ...payload };
+    }
+
+    async function deleteCustomerAddress(uid, addressId) {
+      const normalizedUid = String(uid || auth.currentUser?.uid || "").trim();
+      const normalizedAddressId = String(addressId || "").trim();
+      if (!normalizedUid) throw new Error("請先登入。");
+      if (!normalizedAddressId) throw new Error("找不到配送地址。");
+      await firestoreSdk.deleteDoc(customerAddressDocument(normalizedUid, normalizedAddressId));
+      return { id: normalizedAddressId };
+    }
+
+    async function setDefaultCustomerAddress(uid, addressId) {
+      const normalizedUid = String(uid || auth.currentUser?.uid || "").trim();
+      const normalizedAddressId = String(addressId || "").trim();
+      if (!normalizedUid) throw new Error("請先登入。");
+      if (!normalizedAddressId) throw new Error("找不到配送地址。");
+      const batch = firestoreSdk.writeBatch(db);
+      await writeCustomerDefaultUpdates(normalizedUid, batch, normalizedAddressId);
+      batch.set(customerAddressDocument(normalizedUid, normalizedAddressId), {
+        isDefault: true,
+        updatedAt: firestoreSdk.serverTimestamp()
+      }, { merge: true });
+      await batch.commit();
+      return { id: normalizedAddressId, isDefault: true };
     }
 
     function listenOrders(callback, onError) {
@@ -767,6 +904,11 @@
       updateCurrentUserEmail,
       listenUsers,
       listenUserProfile,
+      listenCustomerAddresses,
+      createCustomerAddress,
+      updateCustomerAddress,
+      deleteCustomerAddress,
+      setDefaultCustomerAddress,
       listenOrders,
       listenCurrentUserOrders,
       listenOrdersByCustomer,

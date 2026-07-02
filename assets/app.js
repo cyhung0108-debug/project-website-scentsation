@@ -22,6 +22,8 @@
     currentUser: null,
     currentUserProfile: null,
     currentUserOrders: [],
+    currentUserAddresses: [],
+    profileAddressEditingId: "",
     orderConfirmation: null,
     aboutContent: null,
     aboutContentLoadStarted: false,
@@ -40,6 +42,7 @@
   };
   let currentUserProfileUnsub = null;
   let currentUserOrdersUnsub = null;
+  let currentUserAddressesUnsub = null;
   const AUTH_NOTICE_KEY = "onlineShopAuthNotice";
   const BACKOFFICE_ROLES = ["super_admin", "admin", "staff"];
 
@@ -343,7 +346,7 @@
   }
 
   function profileUrl(tab = "profile") {
-    const normalizedTab = ["profile", "orders", "security"].includes(tab) ? tab : "profile";
+    const normalizedTab = ["profile", "addresses", "orders", "security"].includes(tab) ? tab : "profile";
     return `${rootPrefix()}profile.html?tab=${encodeURIComponent(normalizedTab)}`;
   }
 
@@ -367,7 +370,7 @@
   function getProfileTabFromUrl() {
     const params = new URLSearchParams(window.location.search);
     const tab = String(params.get("tab") || "profile").trim();
-    return ["profile", "orders", "security"].includes(tab) ? tab : "profile";
+    return ["profile", "addresses", "orders", "security"].includes(tab) ? tab : "profile";
   }
 
   function isStorePreviewGuest() {
@@ -711,9 +714,15 @@
           currentUserOrdersUnsub();
           currentUserOrdersUnsub = null;
         }
+        if (currentUserAddressesUnsub) {
+          currentUserAddressesUnsub();
+          currentUserAddressesUnsub = null;
+        }
         if (!user) {
           state.currentUserProfile = null;
           state.currentUserOrders = [];
+          state.currentUserAddresses = [];
+          state.profileAddressEditingId = "";
           setCurrentUserFromFirebase(null);
           renderProfilePage();
           renderCheckoutPage();
@@ -755,6 +764,8 @@
           }
           state.currentUserProfile = null;
           state.currentUserOrders = [];
+          state.currentUserAddresses = [];
+          state.profileAddressEditingId = "";
           setCurrentUserFromFirebase(null);
           renderProfilePage();
           window.location.replace(homeUrl());
@@ -777,10 +788,26 @@
           }
           state.currentUserProfile = null;
           state.currentUserOrders = [];
+          state.currentUserAddresses = [];
+          state.profileAddressEditingId = "";
           setCurrentUserFromFirebase(null);
           renderProfilePage();
           window.location.replace(homeUrl());
         });
+
+        currentUserAddressesUnsub = firebase.listenCustomerAddresses?.(
+          user.uid,
+          (addresses) => {
+            state.currentUserAddresses = Array.isArray(addresses) ? addresses : [];
+            renderProfilePage();
+            renderCheckoutPage();
+          },
+          () => {
+            state.currentUserAddresses = [];
+            renderProfilePage();
+            renderCheckoutPage();
+          }
+        );
 
         if (normalizedUser && state.authRedirect === "merchant-dashboard" && canUseDashboard) {
           state.authRedirect = "";
@@ -1092,7 +1119,6 @@
       await firebase.updateCurrentUserProfile?.({
         displayName: data.get("displayName"),
         phone: data.get("phone"),
-        address: data.get("address"),
         birthday: data.get("birthday"),
         gender: data.get("gender")
       });
@@ -1217,6 +1243,9 @@
       deliveryMethod: "pickup",
       deliveryAddress: "",
       sameAsCustomer: false,
+      selectedAddressId: "",
+      saveAddress: false,
+      setDefaultAddress: false,
       note: ""
     };
     try {
@@ -1235,6 +1264,9 @@
         deliveryMethod: parsed.deliveryMethod === "delivery" ? "delivery" : "pickup",
         deliveryAddress: typeof parsed.deliveryAddress === "string" ? parsed.deliveryAddress : "",
         sameAsCustomer: parsed.sameAsCustomer === true,
+        selectedAddressId: typeof parsed.selectedAddressId === "string" ? parsed.selectedAddressId : "",
+        saveAddress: parsed.saveAddress === true,
+        setDefaultAddress: parsed.setDefaultAddress === true,
         note: typeof parsed.note === "string" ? parsed.note : ""
       };
     } catch (error) {
@@ -1251,6 +1283,47 @@
 
   function clearCheckoutDraft() {
     window.localStorage.removeItem(CHECKOUT_DRAFT_KEY);
+  }
+
+  function getCustomerAddresses() {
+    return Array.isArray(state.currentUserAddresses) ? state.currentUserAddresses : [];
+  }
+
+  function getDefaultCustomerAddress() {
+    return getCustomerAddresses().find((address) => address.isDefault === true) || null;
+  }
+
+  function getCustomerAddressById(addressId) {
+    const normalizedId = String(addressId || "").trim();
+    if (!normalizedId) return null;
+    return getCustomerAddresses().find((address) => String(address.id) === normalizedId) || null;
+  }
+
+  function checkoutAddressLabel(address) {
+    const name = String(address?.recipientName || "").trim();
+    const phone = String(address?.recipientPhone || "").trim();
+    const detail = String(address?.address || "").trim();
+    return [name, phone, detail].filter(Boolean).join(" · ");
+  }
+
+  function checkoutSelectedAddress(draft = loadCheckoutDraft()) {
+    return getCustomerAddressById(draft.selectedAddressId) || getDefaultCustomerAddress();
+  }
+
+  function addressBookFormValues(form) {
+    const data = new FormData(form);
+    return {
+      recipientName: String(data.get("recipientName") || "").trim(),
+      recipientPhone: String(data.get("recipientPhone") || "").trim(),
+      address: String(data.get("address") || "").trim(),
+      isDefault: data.get("isDefault") === "on"
+    };
+  }
+
+  function addressBookErrorMessage(error) {
+    const code = String(error?.code || "");
+    if (code.includes("permission-denied")) return "目前權限不允許更新配送地址。";
+    return String(error?.message || "配送地址更新失敗，請稍後再試。");
   }
 
   function removeCartDrawerNotes() {
@@ -1378,15 +1451,19 @@
     const draft = loadCheckoutDraft();
     const profile = state.currentUserProfile || {};
     const currentUser = state.currentUser || {};
+    const savedAddress = checkoutSelectedAddress(draft);
     return {
       customerName: draft.customerName || profile.displayName || currentUser.displayName || "",
       customerEmail: draft.customerEmail || profile.email || currentUser.email || "",
       customerPhone: draft.customerPhone || profile.phone || "",
-      recipientName: draft.recipientName || "",
-      recipientPhone: draft.recipientPhone || "",
+      recipientName: draft.recipientName || savedAddress?.recipientName || "",
+      recipientPhone: draft.recipientPhone || savedAddress?.recipientPhone || "",
       deliveryMethod: draft.deliveryMethod === "delivery" ? "delivery" : "pickup",
-      deliveryAddress: draft.deliveryAddress || profile.address || "",
+      deliveryAddress: draft.deliveryAddress || savedAddress?.address || profile.address || "",
       sameAsCustomer: draft.sameAsCustomer === true,
+      selectedAddressId: draft.selectedAddressId || savedAddress?.id || "",
+      saveAddress: draft.saveAddress === true,
+      setDefaultAddress: draft.setDefaultAddress === true,
       note: draft.note || ""
     };
   }
@@ -1567,6 +1644,7 @@
     loadCart();
     const defaults = checkoutDefaults();
     const totals = checkoutTotals(defaults);
+    const savedAddresses = getCustomerAddresses();
     if (!state.currentUser) {
       container.innerHTML = `
         ${renderCheckoutSteps("details")}
@@ -1601,6 +1679,18 @@
           <section class="checkout-section">
             <h2>收件人資料</h2>
             <label class="checkout-checkbox"><input type="checkbox" name="sameAsCustomer" data-checkout-same ${defaults.sameAsCustomer ? "checked" : ""}>收件人資料與顧客資料相同</label>
+            ${savedAddresses.length ? `
+              <div class="checkout-address-book">
+                <label>使用已保存配送地址
+                  <select name="selectedAddressId" data-checkout-address-select data-checkout-field>
+                    <option value="">不使用已保存地址</option>
+                    ${savedAddresses.map((address) => `
+                      <option value="${escapeHtml(address.id)}" ${String(defaults.selectedAddressId) === String(address.id) ? "selected" : ""}>${escapeHtml(checkoutAddressLabel(address))}${address.isDefault ? "（預設）" : ""}</option>
+                    `).join("")}
+                  </select>
+                </label>
+              </div>
+            ` : ""}
             <label>收件人名稱<input type="text" name="recipientName" data-checkout-field value="${escapeHtml(defaults.sameAsCustomer ? defaults.customerName : defaults.recipientName)}" required></label>
             <label>收件人聯絡電話<input type="tel" name="recipientPhone" data-checkout-field value="${escapeHtml(defaults.sameAsCustomer ? defaults.customerPhone : defaults.recipientPhone)}" required></label>
             <label>收貨方式
@@ -1609,7 +1699,11 @@
                 <option value="delivery" ${defaults.deliveryMethod === "delivery" ? "selected" : ""}>送貨上門</option>
               </select>
             </label>
-            <label class="checkout-address ${defaults.deliveryMethod === "delivery" ? "" : "is-hidden"}">收貨地址<textarea name="deliveryAddress" rows="4" data-checkout-field ${defaults.deliveryMethod === "delivery" ? "required" : ""}>${escapeHtml(defaults.sameAsCustomer ? (state.currentUserProfile?.address || defaults.deliveryAddress) : defaults.deliveryAddress)}</textarea></label>
+            <label class="checkout-address ${defaults.deliveryMethod === "delivery" ? "" : "is-hidden"}">收貨地址<textarea name="deliveryAddress" rows="4" data-checkout-field ${defaults.deliveryMethod === "delivery" ? "required" : ""}>${escapeHtml(defaults.deliveryAddress)}</textarea></label>
+            <div class="checkout-address-save">
+              <label class="checkout-checkbox"><input type="checkbox" name="saveAddress" data-checkout-field ${defaults.saveAddress ? "checked" : ""}>保存到配送地址</label>
+              <label class="checkout-checkbox"><input type="checkbox" name="setDefaultAddress" data-checkout-field ${defaults.setDefaultAddress ? "checked" : ""}>設為預設地址</label>
+            </div>
           </section>
           <section class="checkout-section">
             <h2>訂單備註</h2>
@@ -1665,8 +1759,11 @@
       recipientPhone: sameAsCustomer ? customerPhone : String(formData.get("recipientPhone") || "").trim(),
       deliveryMethod: formData.get("deliveryMethod") === "delivery" ? "delivery" : "pickup",
       deliveryAddress: sameAsCustomer
-        ? String(state.currentUserProfile?.address || formData.get("deliveryAddress") || "").trim()
+        ? String(formData.get("deliveryAddress") || state.currentUserProfile?.address || "").trim()
         : String(formData.get("deliveryAddress") || "").trim(),
+      selectedAddressId: String(formData.get("selectedAddressId") || "").trim(),
+      saveAddress: formData.get("saveAddress") === "on",
+      setDefaultAddress: formData.get("setDefaultAddress") === "on",
       note: String(formData.get("note") || "").trim(),
       cardLast4: cardNumber.slice(-4)
     };
@@ -1738,6 +1835,18 @@
         note: payload.note
       };
       const createdOrder = await firebase.createOrder(orderData);
+      if (payload.saveAddress && firebase.createCustomerAddress) {
+        try {
+          await firebase.createCustomerAddress(state.currentUser.uid, {
+            recipientName: payload.recipientName,
+            recipientPhone: payload.recipientPhone,
+            address: payload.deliveryAddress,
+            isDefault: payload.setDefaultAddress
+          });
+        } catch (addressError) {
+          console.warn("配送地址保存失敗，訂單已建立。", addressError);
+        }
+      }
       state.orderConfirmation = { ...orderData, id: createdOrder.id, createdAt: new Date().toISOString() };
       state.cart = [];
       saveCart();
@@ -2296,6 +2405,118 @@
     }
   }
 
+  function renderProfileAddressBook() {
+    const addresses = getCustomerAddresses();
+    const editingAddress = getCustomerAddressById(state.profileAddressEditingId);
+    const formTitle = editingAddress ? "編輯配送地址" : "新增配送地址";
+    return `
+      <div class="profile-address-page">
+        <div class="profile-address-header">
+          <div>
+            <h2>配送地址</h2>
+            <p>管理 checkout 可自動填入的收件人與配送地址。</p>
+          </div>
+          <a class="checkout-secondary-button" href="#profile-address-form">新增配送地址</a>
+        </div>
+        ${addresses.length ? `
+          <div class="address-book-list">
+            ${addresses.map((address) => `
+              <article class="address-book-card">
+                <div class="address-book-card__main">
+                  <div class="address-book-card__title">
+                    <strong>${escapeHtml(address.recipientName)}</strong>
+                    ${address.isDefault ? `<span class="address-book-card__badge">預設</span>` : ""}
+                  </div>
+                  <p>${escapeHtml(address.recipientPhone)}</p>
+                  <p>${escapeHtml(address.address)}</p>
+                </div>
+                <div class="address-book-card__actions">
+                  ${address.isDefault ? "" : `<button type="button" data-set-default-address="${escapeHtml(address.id)}">設為預設</button>`}
+                  <button type="button" data-edit-profile-address="${escapeHtml(address.id)}">編輯</button>
+                  <button type="button" data-delete-profile-address="${escapeHtml(address.id)}">刪除</button>
+                </div>
+              </article>
+            `).join("")}
+          </div>
+        ` : `<p class="profile-empty-message">暫時沒有配送地址。</p>`}
+        <form id="profile-address-form" class="profile-address-form" data-profile-address-form data-address-id="${escapeHtml(editingAddress?.id || "")}">
+          <h3>${formTitle}</h3>
+          <label>收件人名稱<input type="text" name="recipientName" value="${escapeHtml(editingAddress?.recipientName || "")}" required></label>
+          <label>聯絡電話<input type="tel" name="recipientPhone" value="${escapeHtml(editingAddress?.recipientPhone || "")}" required></label>
+          <label class="profile-address-form__wide">配送地址<textarea name="address" rows="4" required>${escapeHtml(editingAddress?.address || "")}</textarea></label>
+          <label class="profile-address-form__wide profile-address-checkbox"><input type="checkbox" name="isDefault" ${editingAddress?.isDefault ? "checked" : ""}>設為預設地址</label>
+          <p class="profile-settings-form__message" data-profile-address-message aria-live="polite"></p>
+          <div class="profile-address-form__actions">
+            <button class="checkout-button" type="submit" data-profile-address-save>${editingAddress ? "儲存配送地址" : "新增配送地址"}</button>
+            ${editingAddress ? `<button class="checkout-secondary-button" type="button" data-cancel-profile-address-edit>取消編輯</button>` : ""}
+          </div>
+        </form>
+      </div>
+    `;
+  }
+
+  function setProfileAddressMessage(message, type = "info") {
+    const node = $("[data-profile-address-message]");
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.type = type;
+  }
+
+  async function handleProfileAddressSubmit(form) {
+    if (!state.currentUser) return;
+    const values = addressBookFormValues(form);
+    const saveButton = form.querySelector("[data-profile-address-save]");
+    if (saveButton) saveButton.disabled = true;
+    setProfileAddressMessage("正在儲存配送地址...");
+    try {
+      const firebase = await getFirebaseService();
+      const addressId = String(form.dataset.addressId || "").trim();
+      if (addressId) {
+        if (!firebase.updateCustomerAddress) throw new Error("配送地址更新服務尚未準備完成。");
+        await firebase.updateCustomerAddress(state.currentUser.uid, addressId, values);
+      } else {
+        if (!firebase.createCustomerAddress) throw new Error("配送地址新增服務尚未準備完成。");
+        await firebase.createCustomerAddress(state.currentUser.uid, values);
+      }
+      state.profileAddressEditingId = "";
+      setProfileAddressMessage("配送地址已更新", "success");
+      showToast("配送地址已更新");
+      renderProfilePage();
+    } catch (error) {
+      setProfileAddressMessage(addressBookErrorMessage(error), "error");
+    } finally {
+      if (saveButton) saveButton.disabled = false;
+    }
+  }
+
+  async function handleDeleteProfileAddress(addressId) {
+    const address = getCustomerAddressById(addressId);
+    if (!address) return showToast("找不到配送地址。");
+    if (!window.confirm("確定要刪除此配送地址？")) return;
+    try {
+      const firebase = await getFirebaseService();
+      if (!firebase.deleteCustomerAddress) throw new Error("配送地址刪除服務尚未準備完成。");
+      await firebase.deleteCustomerAddress(state.currentUser.uid, address.id);
+      if (String(state.profileAddressEditingId) === String(address.id)) state.profileAddressEditingId = "";
+      showToast("配送地址已刪除");
+    } catch (error) {
+      showToast(addressBookErrorMessage(error));
+    }
+  }
+
+  async function handleSetDefaultProfileAddress(addressId) {
+    const address = getCustomerAddressById(addressId);
+    if (!address) return showToast("找不到配送地址。");
+    try {
+      const firebase = await getFirebaseService();
+      if (!firebase.setDefaultCustomerAddress) throw new Error("預設地址服務尚未準備完成。");
+      await firebase.setDefaultCustomerAddress(state.currentUser.uid, address.id);
+      showToast("預設配送地址已更新");
+    } catch (error) {
+      showToast(addressBookErrorMessage(error));
+    }
+  }
+
   function renderProfilePage() {
     const container = $("[data-profile-page]");
     if (!container) return;
@@ -2328,6 +2549,7 @@
           <h1>我的帳戶</h1>
           <nav class="profile-nav">
             <a class="${currentTab === "profile" ? "is-active" : ""}" href="${profileUrl("profile")}">個人資料</a>
+            <a class="${currentTab === "addresses" ? "is-active" : ""}" href="${profileUrl("addresses")}">配送地址</a>
             <a class="${currentTab === "orders" ? "is-active" : ""}" href="${profileUrl("orders")}">訂單記錄</a>
             <a class="${currentTab === "security" ? "is-active" : ""}" href="${profileUrl("security")}">帳戶安全</a>
           </nav>
@@ -2339,7 +2561,6 @@
               <label>電郵<input type="email" name="email" value="${escapeHtml(emailValue)}"></label>
               <label>顯示名稱<input type="text" name="displayName" value="${escapeHtml(profile.displayName || "")}"></label>
               <label>電話<input type="text" name="phone" value="${escapeHtml(profile.phone || "")}"></label>
-              <label class="profile-settings-form__wide">地址<textarea name="address" rows="4">${escapeHtml(profile.address || "")}</textarea></label>
               <label>生日<input type="date" name="birthday" value="${escapeHtml(profile.birthday || "")}"></label>
               <label>性別
                 <select name="gender">
@@ -2354,6 +2575,10 @@
                 <button class="checkout-button" type="submit" data-profile-save>儲存個人資料</button>
               </div>
             </form>
+          </section>
+
+          <section class="profile-panel ${currentTab === "addresses" ? "is-active" : ""}" ${currentTab === "addresses" ? "" : "hidden"}>
+            ${renderProfileAddressBook()}
           </section>
 
           <section class="profile-panel ${currentTab === "orders" ? "is-active" : ""}" ${currentTab === "orders" ? "" : "hidden"}>
@@ -3009,6 +3234,32 @@
       return;
     }
 
+    const editProfileAddressButton = event.target.closest("[data-edit-profile-address]");
+    if (editProfileAddressButton) {
+      state.profileAddressEditingId = editProfileAddressButton.dataset.editProfileAddress || "";
+      renderProfilePage();
+      document.getElementById("profile-address-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    const deleteProfileAddressButton = event.target.closest("[data-delete-profile-address]");
+    if (deleteProfileAddressButton) {
+      handleDeleteProfileAddress(deleteProfileAddressButton.dataset.deleteProfileAddress);
+      return;
+    }
+
+    const setDefaultAddressButton = event.target.closest("[data-set-default-address]");
+    if (setDefaultAddressButton) {
+      handleSetDefaultProfileAddress(setDefaultAddressButton.dataset.setDefaultAddress);
+      return;
+    }
+
+    if (event.target.closest("[data-cancel-profile-address-edit]")) {
+      state.profileAddressEditingId = "";
+      renderProfilePage();
+      return;
+    }
+
     const openButton = event.target.closest("[data-open-drawer]");
     if (openButton) {
       openDrawer(openButton.dataset.openDrawer);
@@ -3134,6 +3385,26 @@
         renderCheckoutPage();
       }
     }
+
+    if (event.target.matches("[data-checkout-address-select]")) {
+      const form = event.target.closest("[data-checkout-form]");
+      if (form) {
+        const address = getCustomerAddressById(event.target.value);
+        const payload = checkoutFormPayload(form);
+        saveCheckoutDraft(address
+          ? {
+              ...payload,
+              selectedAddressId: address.id,
+              sameAsCustomer: false,
+              recipientName: address.recipientName,
+              recipientPhone: address.recipientPhone,
+              deliveryMethod: "delivery",
+              deliveryAddress: address.address
+            }
+          : { ...payload, selectedAddressId: "" });
+        renderCheckoutPage();
+      }
+    }
   });
 
   document.addEventListener("input", (event) => {
@@ -3161,6 +3432,13 @@
     if (checkoutForm) {
       event.preventDefault();
       await handleCheckoutSubmit(checkoutForm);
+      return;
+    }
+
+    const profileAddressForm = event.target.closest("[data-profile-address-form]");
+    if (profileAddressForm) {
+      event.preventDefault();
+      await handleProfileAddressSubmit(profileAddressForm);
       return;
     }
 
