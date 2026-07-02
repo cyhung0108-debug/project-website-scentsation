@@ -79,6 +79,16 @@ service cloud.firestore {
         && get(settingsPath()).data.permissions[feature][role] == true;
     }
 
+    function canSoftDeleteUsers() {
+      return isSuperAdmin()
+        || isAdmin()
+        || (
+          isStaff()
+          && rolePermissionsDocExists()
+          && settingsRoleFlag("usersManage", "staff")
+        );
+    }
+
     function canViewUserDetails() {
       return canManageUsers()
         || (
@@ -389,6 +399,25 @@ service cloud.firestore {
         ]);
     }
 
+    function validUserSoftDelete(userId) {
+      return canSoftDeleteUsers()
+        && request.auth.uid != userId
+        && !(resource.data.role in ["super_admin", "merchant"])
+        && (
+          isSuperAdmin()
+          || (isAdmin() && !(resource.data.role in ["admin"]))
+          || (isStaff() && resource.data.role == "customer")
+        )
+        && request.resource.data.status == "deleted"
+        && request.resource.data.isDeleted == true
+        && request.resource.data.deletedBy == request.auth.uid
+        && request.resource.data.deletedAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status", "isDeleted", "deletedAt", "deletedBy", "updatedAt"
+        ]);
+    }
+
     function validStaffUserNoteUpdate() {
       return canViewUserDetails()
         && isStaff()
@@ -666,7 +695,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isOwner(userId) || canViewUserDetails();
       allow create: if validUserCreate(userId);
-      allow update: if validUserSelfUpdate(userId) || validInviteUserUpdate(userId) || validAdminUserUpdate() || validStaffUserNoteUpdate() || validPermissionUpdate();
+      allow update: if validUserSelfUpdate(userId) || validInviteUserUpdate(userId) || validAdminUserUpdate() || validUserSoftDelete(userId) || validStaffUserNoteUpdate() || validPermissionUpdate();
       allow delete: if false;
 
       match /cart/{itemId} {

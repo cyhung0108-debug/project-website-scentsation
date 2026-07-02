@@ -304,8 +304,36 @@
     return hasPermission("usersBlock") && canModifyUser(user);
   }
 
+  function isSoftDeletedUser(user) {
+    return user?.status === "deleted" || user?.isDeleted === true || user?.deleted === true;
+  }
+
+  function hasSoftDeleteUserPermission() {
+    if (isAdmin()) {
+      return canManageUsers() || hasPermission("usersProfileEdit") || hasPermission("usersBlock");
+    }
+    if (isStaff()) {
+      return canManageUsers() || hasPermission("usersProfileEdit") || hasPermission("usersBlock");
+    }
+    return false;
+  }
+
+  function canSoftDeleteUser(user) {
+    const userId = String(user?.uid || user?.id || "").trim();
+    const targetRole = String(user?.role || "customer").trim();
+    if (!user || !userId) return false;
+    if (currentMerchant?.uid && userId === currentMerchant.uid) return false;
+    if (isSoftDeletedUser(user)) return false;
+    if (["super_admin", "merchant"].includes(targetRole)) return false;
+    if (isSuperAdmin()) return true;
+    if (!hasSoftDeleteUserPermission()) return false;
+    if (isAdmin()) return !["admin"].includes(targetRole);
+    if (isStaff()) return targetRole === "customer";
+    return false;
+  }
+
   function isVisibleUser(user) {
-    return user?.status !== "exited" && user?.hidden !== true && user?.deleted !== true;
+    return user?.status !== "exited" && user?.hidden !== true && !isSoftDeletedUser(user);
   }
 
   function inviteStatusLabel(invite) {
@@ -634,7 +662,7 @@
       return;
     }
     message.textContent = "";
-    const canOperateUsers = canViewUserDetails() || hasPermission("usersProfileEdit") || hasPermission("usersRoleEdit") || hasPermission("usersBlock") || hasPermission("ordersRead") || hasPermission("ordersUpdate");
+    const canOperateUsers = canViewUserDetails() || canManageUsers() || hasSoftDeleteUserPermission() || hasPermission("usersProfileEdit") || hasPermission("usersRoleEdit") || hasPermission("usersBlock") || hasPermission("ordersRead") || hasPermission("ordersUpdate");
     const sortedUsers = sortedUsersByCreatedAt();
     const sortArrow = userCreatedSort === "desc" ? "↓" : "↑";
     table.innerHTML = `
@@ -656,7 +684,7 @@
           ${sortedUsers.map((user) => {
             const userId = escapeHtml(user.uid || user.id);
             const canModify = canModifyUser(user);
-            const canDelete = canSetUserStatus(user) && user.status !== "blocked";
+            const canDelete = canSoftDeleteUser(user);
             const canOpen = canViewUserDetails();
             const actionLabel = isStaff() ? "查看" : "修改";
             return `
@@ -688,7 +716,7 @@
                 <td>
                   <div class="merchant-row-actions">
                     ${canOpen ? `<button class="merchant-table-action merchant-table-action--view" type="button" data-edit-user="${userId}" aria-label="${actionLabel}用戶">${actionLabel}</button>` : ""}
-                    <button class="merchant-icon-button merchant-icon-button--delete" type="button" data-delete-user="${userId}" aria-label="刪除用戶" ${canDelete ? "" : "disabled"}>
+                    <button class="merchant-icon-button merchant-icon-button--delete" type="button" data-delete-user="${userId}" aria-label="刪除 / 停用用戶" title="刪除 / 停用" ${canDelete ? "" : "disabled"}>
                       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 21c-1.1 0-2-.9-2-2V8h14v11c0 1.1-.9 2-2 2H7ZM9 4h6l1 2h4v2H4V6h4l1-2Zm0 7v7h2v-7H9Zm4 0v7h2v-7h-2Z"/></svg>
                     </button>
                   </div>
@@ -1190,11 +1218,18 @@
   async function deleteUser(userId) {
     const user = editableUserById(userId);
     if (!user) return showMerchantToast("找不到此用戶。");
-    if (user.status === "blocked") return showMerchantToast("此用戶已封鎖。");
-    if (!canSetUserStatus(user)) return showMerchantToast("你沒有權限刪除此用戶。");
-    const confirmed = window.confirm(`確定要刪除 / 停用 ${user.email || user.displayName || userId}？\n目前版本不會刪除 Firebase Auth 帳號，只會封鎖此用戶。`);
+    if (isSoftDeletedUser(user)) return showMerchantToast("此用戶已被停用。");
+    if (!canSoftDeleteUser(user)) return showMerchantToast("你沒有權限刪除此用戶。");
+    const confirmed = window.confirm(`確定要刪除 / 停用 ${user.email || user.displayName || userId}？\n此操作會將用戶從後台列表移除並停用登入，但不會刪除歷史訂單。`);
     if (!confirmed) return;
-    return updateUserStatus(userId, "blocked");
+    try {
+      const firebase = await firebaseService();
+      if (!firebase.softDeleteUser) throw new Error("用戶停用服務尚未準備完成。");
+      await firebase.softDeleteUser(userId, currentMerchant?.uid || "");
+      showMerchantToast("用戶已刪除 / 停用");
+    } catch (error) {
+      showMerchantToast(merchantErrorMessage(error, "無法刪除用戶。"));
+    }
   }
 
   function isToday(value) {
