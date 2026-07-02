@@ -697,6 +697,35 @@
     if (!state.authBusy) updateAuthSubmitState();
   }
 
+  function isDeletedUserProfile(profile) {
+    return profile?.status === "deleted" || profile?.isDeleted === true;
+  }
+
+  function isInactiveUserProfile(profile) {
+    return profile?.status === "blocked" || isDeletedUserProfile(profile);
+  }
+
+  function inactiveUserNotice(profile) {
+    return isDeletedUserProfile(profile) ? "此帳戶已被停用" : "登入失敗 您的帳號已被封鎖";
+  }
+
+  async function signOutInactiveUser(firebase, profile, warningMessage) {
+    state.authPendingAction = "";
+    queueAuthNotice(inactiveUserNotice(profile));
+    try {
+      await firebase.signOut(firebase.auth);
+    } catch (error) {
+      console.warn(warningMessage, error);
+    }
+    state.currentUserProfile = null;
+    state.currentUserOrders = [];
+    setCurrentUserFromFirebase(null);
+    renderProfilePage();
+    renderCheckoutPage();
+    renderOrderConfirmationPage();
+    window.location.replace(homeUrl());
+  }
+
 
   async function initFirebaseAuth() {
     try {
@@ -742,22 +771,11 @@
         const userRole = String(profile?.role || "").trim();
         const effectiveBackofficeRole = isActiveBackofficeUser(merchantRole)
           ? merchantRole
-          : { role: userRole, active: profile?.status !== "blocked" };
+          : { role: userRole, active: !isInactiveUserProfile(profile) };
         const canUseDashboard = isActiveBackofficeUser(effectiveBackofficeRole);
 
-        if (profile?.status === "blocked") {
-          state.authPendingAction = "";
-          queueAuthNotice("\u767b\u5165\u5931\u6557 \u60a8\u7684\u8cec\u865f\u5df2\u88ab\u5c01\u9396");
-          try {
-            await firebase.signOut(firebase.auth);
-          } catch (error) {
-            console.warn("\u5c01\u9396\u5e33\u6236\u81ea\u52d5\u767b\u51fa\u5931\u6557\u3002", error);
-          }
-          state.currentUserProfile = null;
-          state.currentUserOrders = [];
-          setCurrentUserFromFirebase(null);
-          renderProfilePage();
-          window.location.replace(homeUrl());
+        if (isInactiveUserProfile(profile)) {
+          await signOutInactiveUser(firebase, profile, "\u505c\u7528\u5e33\u6236\u81ea\u52d5\u767b\u51fa\u5931\u6557\u3002");
           return;
         }
 
@@ -767,19 +785,8 @@
         currentUserProfileUnsub = firebase.listenUserProfile?.(user.uid, async (nextProfile) => {
           state.currentUserProfile = nextProfile || null;
           renderProfilePage();
-          if (!nextProfile || nextProfile.status !== "blocked") return;
-          state.authPendingAction = "";
-          queueAuthNotice("\u767b\u5165\u5931\u6557 \u60a8\u7684\u8cec\u865f\u5df2\u88ab\u5c01\u9396");
-          try {
-            await firebase.signOut(firebase.auth);
-          } catch (error) {
-            console.warn("\u5c01\u9396\u5e33\u6236\u5373\u6642\u767b\u51fa\u5931\u6557\u3002", error);
-          }
-          state.currentUserProfile = null;
-          state.currentUserOrders = [];
-          setCurrentUserFromFirebase(null);
-          renderProfilePage();
-          window.location.replace(homeUrl());
+          if (!nextProfile || !isInactiveUserProfile(nextProfile)) return;
+          await signOutInactiveUser(firebase, nextProfile, "\u505c\u7528\u5e33\u6236\u5373\u6642\u767b\u51fa\u5931\u6557\u3002");
         });
 
         if (normalizedUser && state.authRedirect === "merchant-dashboard" && canUseDashboard) {
@@ -882,7 +889,7 @@
         <input class="auth-field-email" type="email" autocomplete="email" placeholder="電郵地址">
       </label>
       <label class="auth-input">
-        <input class="auth-field-password" type="password" autocomplete="${state.authMode === "login" ? "current-password" : "new-password"}" placeholder="撖Ⅳ">
+        <input class="auth-field-password" type="password" autocomplete="${state.authMode === "login" ? "current-password" : "new-password"}" placeholder="密碼">
       </label>
       ${state.authMode === "register" ? `
         <label class="auth-input">
@@ -2724,7 +2731,7 @@
         </div>
       </section>
       <section class="filter-section filter-section--category-group is-open">
-        <button class="filter-section-toggle" type="button" aria-expanded="true">憿</button>
+        <button class="filter-section-toggle" type="button" aria-expanded="true">分類</button>
         <div class="filter-content filter-category-groups">
           ${categories.map((category) => {
             const hasSubcategories = category.subcategories.length > 0;
