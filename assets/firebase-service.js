@@ -577,6 +577,19 @@
       return { id: normalizedId, ...allowed };
     }
 
+    // This is a KPay-compatible payment stub. Real KPay integration should keep the return shape unchanged.
+    async function createPayment(orderId, options = {}) {
+      const normalizedOrderId = String(orderId || "").trim();
+      if (!normalizedOrderId) throw new Error("找不到訂單 ID。");
+      void options;
+      return {
+        paymentId: `mock_${normalizedOrderId}_${Date.now()}`,
+        orderId: normalizedOrderId,
+        status: "mock",
+        redirectUrl: null
+      };
+    }
+
     async function getActiveProducts() {
       const productsQuery = firestoreSdk.query(
         firestoreSdk.collection(db, "products"),
@@ -758,6 +771,7 @@
       listenCurrentUserOrders,
       listenOrdersByCustomer,
       createOrder,
+      createPayment,
       getOrder,
       updateOrder,
       confirmOrderReceived,
