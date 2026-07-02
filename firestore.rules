@@ -605,10 +605,33 @@ service cloud.firestore {
         ]);
     }
 
+    function isMerchantOrderStatus(status) {
+      return status in ["pending", "processing", "shipping", "ready_pickup", "refunded"];
+    }
+
+    function validMerchantOrderStatusUpdate() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(["status"])
+        || isMerchantOrderStatus(request.resource.data.status);
+    }
+
     function validOrderMerchantUpdate() {
       return canReadSales()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "status", "merchantNote", "updatedAt"
+        ])
+        && request.resource.data.updatedAt == request.time
+        && validMerchantOrderStatusUpdate();
+    }
+
+    function validOrderCustomerReceivedUpdate() {
+      return validOrderOwnerRead()
+        && isActiveUser()
+        && resource.data.status == "ready_pickup"
+        && request.resource.data.status == "received"
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.receivedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status", "updatedAt", "receivedAt"
         ]);
     }
 
@@ -670,7 +693,7 @@ service cloud.firestore {
       allow read: if validOrderOwnerRead() || canReadSales();
       allow create: if validOrderCustomerCreate() || canReadSales();
       allow delete: if canReadSales();
-      allow update: if validOrderMerchantUpdate();
+      allow update: if validOrderMerchantUpdate() || validOrderCustomerReceivedUpdate();
     }
 
     match /{document=**} {

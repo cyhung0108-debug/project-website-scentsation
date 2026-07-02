@@ -2242,13 +2242,58 @@
   function profileOrderStatus(order) {
     const labels = {
       pending: "待處理",
-      paid: "已付款",
       processing: "處理中",
+      shipping: "運輸中",
+      ready_pickup: "待取件",
+      refunded: "已退款",
+      received: "已收貨",
+      paid: "已付款",
       shipped: "已出貨",
       completed: "已完成",
       cancelled: "已取消"
     };
     return labels[order?.status] || order?.status || "未知";
+  }
+
+  function canConfirmOrderReceived(order) {
+    return Boolean(
+      state.currentUser?.uid
+      && order?.status === "ready_pickup"
+      && (
+        order.customerUid === state.currentUser.uid
+        || order.userId === state.currentUser.uid
+        || (state.currentUser.email && order.customerEmail === state.currentUser.email)
+      )
+    );
+  }
+
+  async function handleConfirmOrderReceived(orderId, button) {
+    const order = state.currentUserOrders.find((item) => String(item.id) === String(orderId));
+    if (!canConfirmOrderReceived(order)) return showToast("此訂單目前不能標記為已取件。");
+    if (!window.confirm("請確認你已取件。確認後訂單狀態會更新為已收貨。")) return;
+    const originalText = button?.textContent || "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "更新中…";
+    }
+    try {
+      const firebase = await getFirebaseService();
+      if (!firebase.confirmOrderReceived) throw new Error("訂單狀態更新服務尚未準備完成。");
+      await firebase.confirmOrderReceived(order.id);
+      state.currentUserOrders = state.currentUserOrders.map((item) => (
+        String(item.id) === String(order.id)
+          ? { ...item, status: "received", receivedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+          : item
+      ));
+      renderProfilePage();
+      showToast("訂單已更新為已收貨。");
+    } catch (error) {
+      showToast(error?.message || "無法更新訂單狀態。");
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "已取件";
+      }
+    }
   }
 
   function renderProfilePage() {
@@ -2337,6 +2382,11 @@
                       <span>商戶備註</span>
                       <p>${escapeHtml(order.merchantNote || "暫無備註")}</p>
                     </div>
+                    ${canConfirmOrderReceived(order) ? `
+                      <div class="profile-order-card__actions">
+                        <button class="profile-order-received-button" type="button" data-confirm-order-received="${escapeHtml(order.id)}">已取件</button>
+                      </div>
+                    ` : ""}
                   </article>
                 `).join("")}
               </div>
@@ -2950,6 +3000,12 @@
 
     if (event.target.closest("[data-auth-logout]")) {
       handleLogout();
+      return;
+    }
+
+    const confirmReceivedButton = event.target.closest("[data-confirm-order-received]");
+    if (confirmReceivedButton) {
+      handleConfirmOrderReceived(confirmReceivedButton.dataset.confirmOrderReceived, confirmReceivedButton);
       return;
     }
 

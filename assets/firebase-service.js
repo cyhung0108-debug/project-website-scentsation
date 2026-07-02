@@ -564,6 +564,19 @@
       return { id: normalizedId, ...allowed };
     }
 
+    async function confirmOrderReceived(orderId) {
+      const normalizedId = String(orderId || "").trim();
+      if (!normalizedId) throw new Error("找不到訂單 ID。");
+      const now = firestoreSdk.serverTimestamp();
+      const allowed = {
+        status: "received",
+        updatedAt: now,
+        receivedAt: now
+      };
+      await firestoreSdk.setDoc(firestoreSdk.doc(db, "orders", normalizedId), allowed, { merge: true });
+      return { id: normalizedId, ...allowed };
+    }
+
     // This is a KPay-compatible payment stub. Real KPay integration should keep the return shape unchanged.
     async function createPayment(orderId, options = {}) {
       const normalizedOrderId = String(orderId || "").trim();
@@ -761,6 +774,7 @@
       createPayment,
       getOrder,
       updateOrder,
+      confirmOrderReceived,
       createUserInvite,
       listenUserInvites,
       hideOrDeleteUserInvite,
