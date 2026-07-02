@@ -2664,6 +2664,23 @@ h6 {
   grid-column: 1 / -1;
 }
 
+.profile-order-card__actions {
+  grid-column: 1 / -1;
+}
+
+.profile-order-received-button {
+  border: 1px solid #e2ded8;
+  background: #fbfcfb;
+  color: #050101;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.profile-order-received-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 .profile-order-card__note p,
 .profile-empty-message {
   margin: 0;
@@ -5442,6 +5459,7 @@ h6 {
 
 .merchant-order-detail {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
 }
 
@@ -5458,9 +5476,43 @@ h6 {
   margin: 0 0 10px;
 }
 
+.merchant-order-detail .merchant-modal__actions {
+  grid-column: 1 / -1;
+}
+
+.merchant-order-status-control {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.merchant-order-status-control select {
+  width: 100%;
+  border: 1px solid #c9c5bd;
+  padding: 10px 12px;
+  background: #fff;
+  box-sizing: border-box;
+  font: inherit;
+}
+
+.merchant-order-status-save {
+  width: 100%;
+}
+
+.merchant-order-status-message {
+  display: block;
+  margin: 12px 0 0;
+  color: #5f5a55;
+}
+
+.merchant-order-status-message[data-type="error"] {
+  color: #9b2f25;
+}
+
 @media (max-width: 900px) {
   .checkout-card-grid,
-  .checkout-confirmation__grid {
+  .checkout-confirmation__grid,
+  .merchant-order-detail {
     grid-template-columns: 1fr;
   }
 }

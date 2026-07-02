@@ -564,6 +564,19 @@
       return { id: normalizedId, ...allowed };
     }
 
+    async function confirmOrderReceived(orderId) {
+      const normalizedId = String(orderId || "").trim();
+      if (!normalizedId) throw new Error("找不到訂單 ID。");
+      const now = firestoreSdk.serverTimestamp();
+      const allowed = {
+        status: "received",
+        updatedAt: now,
+        receivedAt: now
+      };
+      await firestoreSdk.setDoc(firestoreSdk.doc(db, "orders", normalizedId), allowed, { merge: true });
+      return { id: normalizedId, ...allowed };
+    }
+
     async function getActiveProducts() {
       const productsQuery = firestoreSdk.query(
         firestoreSdk.collection(db, "products"),
@@ -747,6 +760,7 @@
       createOrder,
       getOrder,
       updateOrder,
+      confirmOrderReceived,
       createUserInvite,
       listenUserInvites,
       hideOrDeleteUserInvite,

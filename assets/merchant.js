@@ -76,6 +76,7 @@
     { key: "ordersRead", label: "查看訂單" },
     { key: "ordersUpdate", label: "修改訂單狀態" }
   ];
+  const MERCHANT_ORDER_STATUSES = ["pending", "processing", "shipping", "ready_pickup", "refunded"];
   const LEGACY_PERMISSION_ALIASES = {
     usersRead: "usersManage",
     usersWrite: "usersProfileEdit",
@@ -453,13 +454,28 @@
   function orderStatusLabel(status) {
     const labels = {
       pending: "待處理",
-      paid: "已付款",
       processing: "處理中",
+      shipping: "運輸中",
+      ready_pickup: "待取件",
+      refunded: "已退款",
+      received: "已收貨",
+      paid: "已付款",
       shipped: "已出貨",
       completed: "已完成",
       cancelled: "已取消"
     };
     return labels[status] || status || "未有狀態";
+  }
+
+  function orderNumberLabel(order) {
+    const base = order?.orderNumber || order?.id || "未提供訂單編號";
+    return order?.status === "refunded" ? `${base}（已退款）` : base;
+  }
+
+  function renderMerchantOrderStatusOptions(currentStatus) {
+    return MERCHANT_ORDER_STATUSES.map((status) => `
+      <option value="${status}" ${currentStatus === status ? "selected" : ""}>${escapeHtml(orderStatusLabel(status))}</option>
+    `).join("");
   }
 
   function cleanupDashboardListeners() {
@@ -835,13 +851,10 @@
           <span>${escapeHtml(formatDateTime(order.createdAt))}</span>
         </div>
         <div class="merchant-user-order-card__grid">
-          <label>狀態
-            <select name="orderStatus" data-order-status="${escapeHtml(order.id)}" ${hasPermission("ordersUpdate") ? "" : "disabled"}>
-              ${["pending", "paid", "processing", "shipped", "completed", "cancelled"].map((status) => `
-                <option value="${status}" ${order.status === status ? "selected" : ""}>${escapeHtml(orderStatusLabel(status))}</option>
-              `).join("")}
-            </select>
-          </label>
+          <div class="merchant-user-order-card__amount">
+            <span>狀態</span>
+            <strong>${escapeHtml(orderStatusLabel(order.status))}</strong>
+          </div>
           <div class="merchant-user-order-card__amount">
             <span>金額</span>
             <strong>${formatDashboardPrice(orderAmount(order))}</strong>
@@ -1046,7 +1059,6 @@
       }
       if (hasPermission("ordersUpdate")) {
         const orderUpdates = editingUserOrders.map((order) => firebase.updateOrder(order.id, {
-          status: form.querySelector(`[data-order-status="${CSS.escape(order.id)}"]`)?.value || order.status,
           merchantNote: form.querySelector(`[data-order-note="${CSS.escape(order.id)}"]`)?.value || ""
         }));
         await Promise.all(orderUpdates);
@@ -1234,7 +1246,7 @@
         <tbody>
           ${currentOrders.slice(0, 20).map((order) => `
             <tr>
-              <td>${escapeHtml(order.orderNumber || order.id)}</td>
+              <td>${escapeHtml(orderNumberLabel(order))}</td>
               <td>${escapeHtml(formatDateTime(order.createdAt))}</td>
               <td>${escapeHtml(orderCustomerName(order))}</td>
               <td>${formatDashboardPrice(orderAmount(order))}</td>
@@ -1280,7 +1292,7 @@
         <tbody>
           ${records.map((order) => `
             <tr>
-              <td>${escapeHtml(order.orderNumber || order.id)}</td>
+              <td>${escapeHtml(orderNumberLabel(order))}</td>
               <td>${escapeHtml(formatDateTime(order.createdAt))}</td>
               <td>${escapeHtml(orderCustomerName(order))}</td>
               <td>${escapeHtml(orderCustomerEmail(order))}</td>
@@ -1306,6 +1318,17 @@
           <p><span>訂單編號</span><strong>${escapeHtml(order.orderNumber || order.id)}</strong></p>
           <p><span>下單時間</span><strong>${escapeHtml(formatDateTime(order.createdAt))}</strong></p>
           <p><span>訂單狀態</span><strong>${escapeHtml(orderStatusLabel(order.status))}</strong></p>
+        </section>
+        <section class="merchant-order-status-panel">
+          <h3>修改訂單狀態</h3>
+          <p><span>目前狀態</span><strong>${escapeHtml(orderStatusLabel(order.status))}</strong></p>
+          <label class="merchant-order-status-control">狀態
+            <select data-merchant-order-status="${escapeHtml(order.id)}" ${hasPermission("ordersUpdate") ? "" : "disabled"}>
+              ${renderMerchantOrderStatusOptions(order.status)}
+            </select>
+          </label>
+          <button class="merchant-primary-button merchant-order-status-save" type="button" data-save-order-status="${escapeHtml(order.id)}" ${hasPermission("ordersUpdate") ? "" : "disabled"}>儲存狀態</button>
+          <p class="merchant-order-status-message" data-order-status-message aria-live="polite"></p>
         </section>
         <section>
           <h3>顧客資料</h3>
@@ -1361,6 +1384,51 @@
     if (!modal || !content) return;
     content.innerHTML = renderOrderDetails(order);
     openModal(modal);
+  }
+
+  async function saveOrderStatus(orderId, button) {
+    if (!hasPermission("ordersUpdate")) return showMerchantToast("你沒有修改訂單狀態的權限。");
+    const normalizedId = String(orderId || "").trim();
+    const order = currentOrders.find((item) => String(item.id) === normalizedId);
+    const select = document.querySelector(`[data-merchant-order-status="${CSS.escape(normalizedId)}"]`);
+    const message = document.querySelector("[data-order-status-message]");
+    const nextStatus = String(select?.value || "").trim();
+    if (!order || !select) return showMerchantToast("找不到訂單資料。");
+    if (!MERCHANT_ORDER_STATUSES.includes(nextStatus)) {
+      if (message) {
+        message.textContent = "此狀態不可由商戶後台設定。";
+        message.dataset.type = "error";
+      }
+      return;
+    }
+    const originalText = button?.textContent || "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "儲存中…";
+    }
+    if (message) {
+      message.textContent = "正在更新訂單狀態…";
+      message.dataset.type = "";
+    }
+    try {
+      const firebase = await firebaseService();
+      await firebase.updateOrder(order.id, { status: nextStatus });
+      const updatedOrder = { ...order, status: nextStatus, updatedAt: new Date().toISOString() };
+      currentOrders = currentOrders.map((item) => String(item.id) === normalizedId ? updatedOrder : item);
+      renderOrders(currentOrders);
+      const content = document.querySelector("[data-merchant-order-content]");
+      if (content) content.innerHTML = renderOrderDetails(updatedOrder);
+      showMerchantToast("訂單狀態已更新");
+    } catch (error) {
+      if (message) {
+        message.textContent = merchantErrorMessage(error, "無法更新訂單狀態。");
+        message.dataset.type = "error";
+      }
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "儲存狀態";
+      }
+    }
   }
 
   function renderOrdersError(error) {
@@ -3841,6 +3909,8 @@
     }
     const editUserButton = event.target.closest("[data-edit-user]");
     if (editUserButton) return openUserEditor(editUserButton.dataset.editUser);
+    const saveOrderStatusButton = event.target.closest("[data-save-order-status]");
+    if (saveOrderStatusButton) return saveOrderStatus(saveOrderStatusButton.dataset.saveOrderStatus, saveOrderStatusButton);
     const viewOrderButton = event.target.closest("[data-view-order]");
     if (viewOrderButton) return openOrderDetails(viewOrderButton.dataset.viewOrder);
     const rolePermissionToggle = event.target.closest("[data-role-permission-toggle]");
