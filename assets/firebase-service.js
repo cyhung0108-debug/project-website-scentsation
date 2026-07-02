@@ -72,12 +72,15 @@
         ...data,
         role: normalizeRole(data.role),
         status: String(data.status || "active"),
+        isDeleted: data.isDeleted === true,
         address: String(data.address || ""),
         gender: String(data.gender || ""),
         birthday: String(data.birthday || ""),
         note: String(data.note || ""),
         createdAt: normalizeTimestamp(data.createdAt),
         lastLoginAt: normalizeTimestamp(data.lastLoginAt),
+        deletedAt: normalizeTimestamp(data.deletedAt),
+        deletedBy: String(data.deletedBy || ""),
         updatedAt: normalizeTimestamp(data.updatedAt)
       };
     }
@@ -271,6 +274,23 @@
       allowed.updatedAt = firestoreSdk.serverTimestamp();
       await firestoreSdk.setDoc(firestoreSdk.doc(db, "users", uid), allowed, { merge: true });
       return { id: uid, ...allowed };
+    }
+
+    async function softDeleteUser(userId, deletedBy = "") {
+      const uid = String(userId || "").trim();
+      const actorUid = String(deletedBy || auth.currentUser?.uid || "").trim();
+      if (!uid) throw new Error("找不到用戶 UID。");
+      if (!actorUid) throw new Error("找不到執行刪除的管理員。");
+      const now = firestoreSdk.serverTimestamp();
+      const payload = {
+        status: "deleted",
+        isDeleted: true,
+        deletedAt: now,
+        deletedBy: actorUid,
+        updatedAt: now
+      };
+      await firestoreSdk.setDoc(firestoreSdk.doc(db, "users", uid), payload, { merge: true });
+      return { id: uid, ...payload };
     }
 
     function generateInviteToken() {
@@ -763,6 +783,7 @@
       upsertCurrentUserProfile,
       updateUserProfile,
       updateUserAccess,
+      softDeleteUser,
       updateCurrentUserProfile,
       updateCurrentUserEmail,
       listenUsers,
