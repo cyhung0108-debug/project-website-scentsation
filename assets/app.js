@@ -1783,6 +1783,10 @@
     return String(error?.message || "訂單提交失敗，請稍後再試。");
   }
 
+  function checkoutPaymentErrorMessage(error) {
+    return String(error?.message || "付款建立失敗，請稍後再試。");
+  }
+
   async function handleCheckoutSubmit(form) {
     if (!state.currentUser) {
       window.location.href = `${rootPrefix()}index.html?auth=login&redirect=checkout`;
@@ -1835,6 +1839,36 @@
         note: payload.note
       };
       const createdOrder = await firebase.createOrder(orderData);
+      const orderId = String(createdOrder?.id || "").trim();
+      setCheckoutMessage("正在建立付款...");
+      let payment;
+      try {
+        payment = await window.onlineShopFirebase.createPayment(orderId);
+      } catch (paymentError) {
+        console.warn("Payment creation failed.", {
+          orderId,
+          code: paymentError?.code,
+          message: paymentError?.message
+        });
+        setCheckoutMessage(checkoutPaymentErrorMessage(paymentError), "error");
+        return;
+      }
+
+      if (payment?.redirectUrl) {
+        window.location.href = payment.redirectUrl;
+        return;
+      }
+
+      if (payment?.status === "failed") {
+        setCheckoutMessage("付款建立失敗，請檢查付款資料後再試。", "error");
+        return;
+      }
+
+      if (payment?.status !== "mock") {
+        setCheckoutMessage("付款正在處理中，請稍後再試。", "error");
+        return;
+      }
+
       if (payload.saveAddress && firebase.createCustomerAddress) {
         try {
           await firebase.createCustomerAddress(state.currentUser.uid, {
@@ -1847,6 +1881,7 @@
           console.warn("配送地址保存失敗，訂單已建立。", addressError);
         }
       }
+
       state.orderConfirmation = { ...orderData, id: createdOrder.id, createdAt: new Date().toISOString() };
       state.cart = [];
       saveCart();
